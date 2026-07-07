@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Trial Ledger — Clinical Evidence Explorer</title>
+<title>Clinical Trial Evidence Assistant</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -43,11 +43,11 @@
     gap:8px;
   }
   header.masthead h1{
-    font-family:'Source Serif 4', serif;
+    font-family:'IBM Plex Sans', sans-serif;
     font-size:28px;
-    font-weight:700;
+    font-weight:600;
     margin:0;
-    letter-spacing:-0.01em;
+    letter-spacing:0;
   }
   header.masthead .kicker{
     font-family:'IBM Plex Mono', monospace;
@@ -270,35 +270,63 @@
     border-radius:2px;
   }
   .empty-state{
-    margin:auto;
-    text-align:center;
-    color:var(--ink-soft);
-    font-size:13.5px;
-    max-width:360px;
-    padding:20px;
-  }
-  .empty-state .big{
-    font-family:'Source Serif 4', serif;
-    font-size:18px;
-    color:var(--ink);
-    margin-bottom:8px;
-  }
+  margin:auto;
+  text-align:center;
+  color:var(--ink-soft);
+  font-size:15px;
+  line-height:1.55;
+  max-width:680px;
+  width:100%;
+  padding:32px 24px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+}
+
+.empty-state .big{
+  font-family:'Source Serif 4', serif;
+  font-size:26px;
+  line-height:1.2;
+  color:var(--ink);
+  margin:0;
+}
+
+.empty-state .copy{
+  max-width:520px;
+}
+
+.suggestions{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(220px, 1fr));
+  gap:10px;
+  width:100%;
+  max-width:560px;
+  margin-top:8px;
+}
+
+.suggestion-chip{
+  font-size:13.5px;
+  line-height:1.35;
+  border:1px solid var(--rule);
+  background:var(--paper-raised);
+  padding:10px 12px;
+  border-radius:18px;
+  cursor:pointer;
+  text-align:center;
+}
+
+.suggestion-chip:hover{
+  border-color:var(--teal);
+  background:var(--teal-soft);
+}
+
+@media(max-width:640px){
   .suggestions{
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-    justify-content:center;
-    margin-top:14px;
+    grid-template-columns:1fr;
   }
-  .suggestion-chip{
-    font-size:12px;
-    border:1px solid var(--rule);
-    background:var(--paper-raised);
-    padding:6px 10px;
-    border-radius:14px;
-    cursor:pointer;
-  }
-  .suggestion-chip:hover{border-color:var(--teal);}
+}
   .chat-input-row{
     border-top:1px solid var(--rule);
     padding:12px;
@@ -349,7 +377,7 @@
   <header class="masthead">
     <div>
       <div class="kicker">Evidence Extraction Tool</div>
-      <h1>Trial Ledger</h1>
+      <h1>Clinical Trial Evidence Assistant</h1>
     </div>
     <div class="kicker" id="sourceNote">Source: ClinicalTrials.gov API v2</div>
   </header>
@@ -359,7 +387,7 @@
       <input type="text" id="searchInput" placeholder="Enter a trial name, condition, or NCT number (e.g. NCT04280705)" />
       <button id="searchBtn">Search</button>
     </div>
-    <div class="hint">Tip: paste an exact NCT number to load a specific trial directly.</div>
+    <div class="hint">Paste an exact NCT number to load a specific trial directly.</div>
     <div class="results-list" id="resultsList"></div>
     <div id="searchError"></div>
   </div>
@@ -370,7 +398,7 @@
       <div class="chat-scroll" id="chatScroll">
         <div class="empty-state" id="emptyState">
           <div class="big">Ask this trial anything</div>
-          <div>Questions are answered strictly from this trial's registry record — eligibility, design, outcomes, and results (when posted).</div>
+          <div class="copy">Questions are answered strictly from this trial's registry record: eligibility, design, outcomes, and results (when posted).</div>
           <div class="suggestions" id="suggestionChips"></div>
         </div>
       </div>
