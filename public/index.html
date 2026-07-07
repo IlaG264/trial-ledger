@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trial Ledger — Clinical Evidence Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #EEF1EC;
+    --paper-raised: #F8F9F6;
+    --ink: #16231F;
+    --ink-soft: #4B5750;
+    --rule: #CBD1C7;
+    --teal: #1B6E6E;
+    --teal-deep: #0F4A4A;
+    --rust: #9C4430;
+    --rust-soft: #F1E1DB;
+    --teal-soft: #DCEBEA;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', sans-serif;
+    min-height:100vh;
+  }
+  .app{
+    max-width:1100px;
+    margin:0 auto;
+    padding:28px 20px 60px;
+  }
+  header.masthead{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:14px;
+    margin-bottom:22px;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  header.masthead h1{
+    font-family:'Source Serif 4', serif;
+    font-size:28px;
+    font-weight:700;
+    margin:0;
+    letter-spacing:-0.01em;
+  }
+  header.masthead .kicker{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+  .search-block{
+    background:var(--paper-raised);
+    border:1px solid var(--rule);
+    border-radius:4px;
+    padding:18px;
+    margin-bottom:20px;
+  }
+  .search-row{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .search-row input{
+    flex:1;
+    min-width:220px;
+    padding:11px 12px;
+    border:1px solid var(--rule);
+    border-radius:3px;
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size:14px;
+    background:#fff;
+    color:var(--ink);
+  }
+  .search-row input:focus{
+    outline:2px solid var(--teal);
+    outline-offset:1px;
+  }
+  button{
+    font-family:'IBM Plex Sans', sans-serif;
+    font-weight:500;
+    font-size:13.5px;
+    border-radius:3px;
+    border:1px solid var(--teal-deep);
+    background:var(--teal);
+    color:#fff;
+    padding:11px 18px;
+    cursor:pointer;
+    transition:background .12s ease;
+  }
+  button:hover{background:var(--teal-deep);}
+  button:disabled{background:#9AAEAA;border-color:#9AAEAA;cursor:not-allowed;}
+  button.ghost{
+    background:transparent;
+    color:var(--teal-deep);
+    border:1px solid var(--rule);
+  }
+  button.ghost:hover{background:var(--teal-soft);}
+  .hint{
+    font-size:12px;
+    color:var(--ink-soft);
+    margin-top:8px;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .results-list{
+    margin-top:14px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .result-card{
+    border:1px solid var(--rule);
+    background:#fff;
+    border-radius:3px;
+    padding:12px 14px;
+    cursor:pointer;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+  }
+  .result-card:hover{border-color:var(--teal);}
+  .result-card .rc-title{font-size:14px; font-weight:500;}
+  .result-card .rc-meta{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+    white-space:nowrap;
+  }
+  .status-pill{
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:10px;
+    font-size:10.5px;
+    font-family:'IBM Plex Mono', monospace;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+    background:var(--teal-soft);
+    color:var(--teal-deep);
+    margin-left:8px;
+  }
+  .status-pill.stopped{background:var(--rust-soft); color:var(--rust);}
+
+  .layout{
+    display:grid;
+    grid-template-columns:300px 1fr;
+    gap:20px;
+  }
+  @media(max-width:820px){
+    .layout{grid-template-columns:1fr;}
+  }
+
+  .ledger-card{
+    background:var(--paper-raised);
+    border:1px solid var(--rule);
+    border-radius:4px;
+    position:relative;
+    padding:18px 16px 16px;
+  }
+  .ledger-card:before{
+    content:"";
+    position:absolute;
+    top:0; left:0; right:0;
+    height:6px;
+    background:repeating-linear-gradient(90deg, var(--ink) 0 8px, transparent 8px 16px);
+    opacity:0.15;
+    border-radius:4px 4px 0 0;
+  }
+  .ledger-card .nct{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--teal-deep);
+    letter-spacing:0.06em;
+  }
+  .ledger-card h2{
+    font-family:'Source Serif 4', serif;
+    font-size:17px;
+    line-height:1.3;
+    margin:6px 0 10px;
+  }
+  .ledger-field{
+    font-size:12.5px;
+    margin-bottom:7px;
+    line-height:1.4;
+  }
+  .ledger-field .label{
+    display:block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--ink-soft);
+    margin-bottom:1px;
+  }
+  .change-trial{
+    display:block;
+    margin-top:14px;
+    font-size:12px;
+    color:var(--teal-deep);
+    cursor:pointer;
+    text-decoration:underline;
+  }
+  .results-flag{
+    margin-top:12px;
+    padding:8px 10px;
+    border-radius:3px;
+    font-size:11.5px;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .results-flag.has-results{background:var(--teal-soft); color:var(--teal-deep);}
+  .results-flag.no-results{background:var(--rust-soft); color:var(--rust);}
+
+  .chat-panel{
+    background:#fff;
+    border:1px solid var(--rule);
+    border-radius:4px;
+    display:flex;
+    flex-direction:column;
+    min-height:520px;
+  }
+  .chat-scroll{
+    flex:1;
+    overflow-y:auto;
+    padding:18px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    max-height:640px;
+  }
+  .msg{max-width:88%;}
+  .msg.user{align-self:flex-end;}
+  .msg.assistant{align-self:flex-start;}
+  .msg .bubble{
+    padding:12px 14px;
+    border-radius:5px;
+    font-size:14px;
+    line-height:1.55;
+    white-space:pre-wrap;
+  }
+  .msg.user .bubble{
+    background:var(--teal);
+    color:#fff;
+    border-radius:5px 5px 2px 5px;
+  }
+  .msg.assistant .bubble{
+    background:var(--paper);
+    border:1px solid var(--rule);
+    border-radius:5px 5px 5px 2px;
+  }
+  .sources-line{
+    margin-top:8px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+  }
+  .source-chip{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+    background:var(--teal-soft);
+    color:var(--teal-deep);
+    border:1px solid var(--teal);
+    padding:3px 8px;
+    border-radius:2px;
+  }
+  .empty-state{
+    margin:auto;
+    text-align:center;
+    color:var(--ink-soft);
+    font-size:13.5px;
+    max-width:360px;
+    padding:20px;
+  }
+  .empty-state .big{
+    font-family:'Source Serif 4', serif;
+    font-size:18px;
+    color:var(--ink);
+    margin-bottom:8px;
+  }
+  .suggestions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    justify-content:center;
+    margin-top:14px;
+  }
+  .suggestion-chip{
+    font-size:12px;
+    border:1px solid var(--rule);
+    background:var(--paper-raised);
+    padding:6px 10px;
+    border-radius:14px;
+    cursor:pointer;
+  }
+  .suggestion-chip:hover{border-color:var(--teal);}
+  .chat-input-row{
+    border-top:1px solid var(--rule);
+    padding:12px;
+    display:flex;
+    gap:8px;
+  }
+  .chat-input-row textarea{
+    flex:1;
+    resize:none;
+    border:1px solid var(--rule);
+    border-radius:3px;
+    padding:10px 12px;
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size:14px;
+    min-height:44px;
+    max-height:120px;
+  }
+  .chat-input-row textarea:focus{outline:2px solid var(--teal); outline-offset:1px;}
+  .typing{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--ink-soft);
+  }
+  .error-box{
+    background:var(--rust-soft);
+    color:var(--rust);
+    border:1px solid var(--rust);
+    border-radius:3px;
+    padding:10px 12px;
+    font-size:13px;
+    margin-top:10px;
+  }
+  .spinner{
+    display:inline-block;
+    width:12px;height:12px;
+    border:2px solid var(--rule);
+    border-top-color:var(--teal);
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+    vertical-align:middle;
+    margin-right:6px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="masthead">
+    <div>
+      <div class="kicker">Evidence Extraction Tool</div>
+      <h1>Trial Ledger</h1>
+    </div>
+    <div class="kicker" id="sourceNote">Source: ClinicalTrials.gov API v2</div>
+  </header>
+
+  <div class="search-block" id="searchBlock">
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="Enter a trial name, condition, or NCT number (e.g. NCT04280705)" />
+      <button id="searchBtn">Search</button>
+    </div>
+    <div class="hint">Tip: paste an exact NCT number to load a specific trial directly.</div>
+    <div class="results-list" id="resultsList"></div>
+    <div id="searchError"></div>
+  </div>
+
+  <div class="layout" id="mainLayout" style="display:none;">
+    <div class="ledger-card" id="ledgerCard"></div>
+    <div class="chat-panel">
+      <div class="chat-scroll" id="chatScroll">
+        <div class="empty-state" id="emptyState">
+          <div class="big">Ask this trial anything</div>
+          <div>Questions are answered strictly from this trial's registry record — eligibility, design, outcomes, and results (when posted).</div>
+          <div class="suggestions" id="suggestionChips"></div>
+        </div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="chatInput" placeholder="e.g. What were the primary outcome results? Who was excluded from enrollment?"></textarea>
+        <button id="sendBtn">Ask</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const els = {
+  searchInput: document.getElementById('searchInput'),
+  searchBtn: document.getElementById('searchBtn'),
+  resultsList: document.getElementById('resultsList'),
+  searchError: document.getElementById('searchError'),
+  mainLayout: document.getElementById('mainLayout'),
+  ledgerCard: document.getElementById('ledgerCard'),
+  chatScroll: document.getElementById('chatScroll'),
+  emptyState: document.getElementById('emptyState'),
+  suggestionChips: document.getElementById('suggestionChips'),
+  chatInput: document.getElementById('chatInput'),
+  sendBtn: document.getElementById('sendBtn'),
+};
+
+let currentTrial = null;      // raw study JSON
+let trialContext = "";        // condensed text fed to the model
+let chatHistory = [];         // [{role, content}]
+let hasResults = false;
+
+// ---------- helpers ----------
+function esc(str){
+  const d = document.createElement('div');
+  d.textContent = str ?? '';
+  return d.innerHTML;
+}
+
+function truncateList(arr, n){
+  if(!Array.isArray(arr)) return { shown: [], omitted: 0 };
+  return { shown: arr.slice(0, n), omitted: Math.max(0, arr.length - n) };
+}
+
+function isNctId(str){
+  return /^NCT\d{8}$/i.test(str.trim());
+}
+
+// ---------- ClinicalTrials.gov API ----------
+async function searchTrials(term){
+  const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(term)}&pageSize=10`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error(`ClinicalTrials.gov search failed (${res.status})`);
+  const data = await res.json();
+  return data.studies || [];
+}
+
+async function fetchTrialById(nctId){
+  const url = `https://clinicaltrials.gov/api/v2/studies/${encodeURIComponent(nctId.toUpperCase())}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error(`Could not find trial ${nctId} (${res.status})`);
+  return await res.json();
+}
+
+// ---------- rendering search results ----------
+function renderResults(studies){
+  els.resultsList.innerHTML = '';
+  if(studies.length === 0){
+    els.resultsList.innerHTML = '<div class="hint">No trials matched that search. Try a broader term or a direct NCT number.</div>';
+    return;
+  }
+  studies.forEach(study => {
+    const id = study.protocolSection?.identificationModule;
+    const status = study.protocolSection?.statusModule;
+    const title = id?.briefTitle || id?.officialTitle || 'Untitled trial';
+    const nct = id?.nctId || '—';
+    const overallStatus = status?.overallStatus || 'Unknown status';
+    const stopped = /TERMINATED|SUSPENDED|WITHDRAWN/i.test(overallStatus);
+
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.innerHTML = `
+      <div>
+        <div class="rc-title">${esc(title)}</div>
+        <span class="status-pill ${stopped ? 'stopped' : ''}">${esc(overallStatus)}</span>
+      </div>
+      <div class="rc-meta">${esc(nct)}</div>
+    `;
+    card.addEventListener('click', () => loadTrial(nct));
+    els.resultsList.appendChild(card);
+  });
+}
+
+// ---------- building the condensed context for the model ----------
+function buildContext(study){
+  const p = study.protocolSection || {};
+  const r = study.resultsSection || null;
+  const id = p.identificationModule || {};
+  const status = p.statusModule || {};
+  const sponsor = p.sponsorCollaboratorsModule || {};
+  const desc = p.descriptionModule || {};
+  const cond = p.conditionsModule || {};
+  const design = p.designModule || {};
+  const arms = p.armsInterventionsModule || {};
+  const outcomes = p.outcomesModule || {};
+  const elig = p.eligibilityModule || {};
+  const contacts = p.contactsLocationsModule || {};
+
+  let out = [];
+
+  out.push(`## IDENTIFICATION\nNCT ID: ${id.nctId || 'N/A'}\nBrief title: ${id.briefTitle || 'N/A'}\nOfficial title: ${id.officialTitle || 'N/A'}\nOrg study ID: ${id.orgStudyIdInfo?.id || 'N/A'}`);
+
+  out.push(`## STATUS\nOverall status: ${status.overallStatus || 'N/A'}\nStart date: ${status.startDateStruct?.date || 'N/A'}\nPrimary completion date: ${status.primaryCompletionDateStruct?.date || 'N/A'}\nCompletion date: ${status.completionDateStruct?.date || 'N/A'}\nWhy stopped: ${status.whyStopped || 'N/A'}`);
+
+  out.push(`## SPONSOR\nLead sponsor: ${sponsor.leadSponsor?.name || 'N/A'}\nCollaborators: ${(sponsor.collaborators||[]).map(c=>c.name).join(', ') || 'None listed'}`);
+
+  out.push(`## DESCRIPTION\nBrief summary: ${desc.briefSummary || 'N/A'}\nDetailed description: ${desc.detailedDescription || 'N/A'}`);
+
+  out.push(`## CONDITIONS\nConditions: ${(cond.conditions||[]).join(', ') || 'N/A'}\nKeywords: ${(cond.keywords||[]).join(', ') || 'N/A'}`);
+
+  out.push(`## DESIGN\nStudy type: ${design.studyType || 'N/A'}\nPhases: ${(design.phases||[]).join(', ') || 'N/A'}\nAllocation: ${design.designInfo?.allocation || 'N/A'}\nIntervention model: ${design.designInfo?.interventionModel || 'N/A'}\nPrimary purpose: ${design.designInfo?.primaryPurpose || 'N/A'}\nMasking: ${design.designInfo?.maskingInfo?.masking || 'N/A'}\nEnrollment: ${design.enrollmentInfo?.count || 'N/A'} (${design.enrollmentInfo?.type || 'N/A'})`);
+
+  const armGroups = (arms.armGroups||[]).map(a => `- ${a.label} [${a.type||'N/A'}]: ${a.description||'no description'}`).join('\n');
+  const interventions = (arms.interventions||[]).map(iv => `- ${iv.type||''} — ${iv.name||''}: ${iv.description||'no description'}`).join('\n');
+  out.push(`## ARMS\n${armGroups || 'N/A'}\n## INTERVENTIONS\n${interventions || 'N/A'}`);
+
+  const primaryOut = (outcomes.primaryOutcomes||[]).map(o => `- ${o.measure} — ${o.description||''} (time frame: ${o.timeFrame||'N/A'})`).join('\n');
+  const secondaryOut = (outcomes.secondaryOutcomes||[]).map(o => `- ${o.measure} — ${o.description||''} (time frame: ${o.timeFrame||'N/A'})`).join('\n');
+  out.push(`## PLANNED OUTCOME MEASURES\nPrimary:\n${primaryOut || 'N/A'}\nSecondary:\n${secondaryOut || 'N/A'}`);
+
+  out.push(`## ELIGIBILITY\nCriteria text: ${elig.eligibilityCriteria || 'N/A'}\nSex: ${elig.sex || 'N/A'}\nMinimum age: ${elig.minimumAge || 'N/A'}\nMaximum age: ${elig.maximumAge || 'N/A'}\nAccepts healthy volunteers: ${elig.healthyVolunteers ?? 'N/A'}`);
+
+  const locs = truncateList((contacts.locations||[]).map(l => `${l.facility||''}, ${l.city||''}, ${l.country||''}`), 15);
+  out.push(`## LOCATIONS (${(contacts.locations||[]).length} total)\n${locs.shown.join('\n') || 'N/A'}${locs.omitted ? `\n(+${locs.omitted} more not shown)` : ''}`);
+
+  // ---- Results section (only present if the trial has posted results) ----
+  if(r){
+    hasResults = true;
+    const flow = r.participantFlowModule || {};
+    const flowGroups = (flow.groups||[]).map(g => `- ${g.title}: ${g.description||''}`).join('\n');
+    const periods = (flow.periods||[]).map(per => {
+      const milestones = (per.milestones||[]).map(m => {
+        const counts = (m.achievements||[]).map(a => `${a.groupId}=${a.numSubjects}`).join(', ');
+        return `  ${m.type}: ${counts}`;
+      }).join('\n');
+      return `Period "${per.title}":\n${milestones}`;
+    }).join('\n');
+    out.push(`## RESULTS: PARTICIPANT FLOW\nGroups:\n${flowGroups || 'N/A'}\n${periods || ''}`);
+
+    const baseline = r.baselineCharacteristicsModule || {};
+    const baseMeasures = truncateList(baseline.measures||[], 8);
+    const baseText = baseMeasures.shown.map(m => {
+      const cats = (m.classes?.[0]?.categories||[]).map(c => {
+        const vals = (c.measurements||[]).map(v => `${v.groupId}=${v.value}`).join(', ');
+        return `${c.title||''}: ${vals}`;
+      }).join(' | ');
+      return `- ${m.title} (${m.unitOfMeasure||''}): ${cats}`;
+    }).join('\n');
+    out.push(`## RESULTS: BASELINE CHARACTERISTICS\n${baseText || 'N/A'}${baseMeasures.omitted ? `\n(+${baseMeasures.omitted} more baseline measures not shown)` : ''}`);
+
+    const outMeasures = truncateList(r.outcomeMeasuresModule?.outcomeMeasures||[], 6);
+    const outText = outMeasures.shown.map(m => {
+      const classes = (m.classes||[]).map(cl => {
+        const cats = (cl.categories||[]).map(c => {
+          const vals = (c.measurements||[]).map(v => `${v.groupId}=${v.value}${v.spread ? ' ±'+v.spread : ''}`).join(', ');
+          return `${c.title||''}: ${vals}`;
+        }).join(' | ');
+        return cats;
+      }).join(' || ');
+      return `- [${m.type||''}] ${m.title} — ${m.description||''} (${m.unitOfMeasure||''}, time frame: ${m.timeFrame||''})\n  Results: ${classes}`;
+    }).join('\n');
+    out.push(`## RESULTS: OUTCOME MEASURES\n${outText || 'N/A'}${outMeasures.omitted ? `\n(+${outMeasures.omitted} more outcome measures not shown — ask about a specific one by name)` : ''}`);
+
+    const ae = r.adverseEventsModule || {};
+    const seriousEvents = truncateList(ae.seriousEvents||[], 12);
+    const otherEvents = truncateList(ae.otherEvents||[], 12);
+    const fmtEvent = e => `- ${e.term} (${e.organSystem||''}): ${(e.stats||[]).map(s=>`${s.groupId}=${s.numAffected}/${s.numAtRisk}`).join(', ')}`;
+    out.push(`## RESULTS: ADVERSE EVENTS\nFrequency threshold: ${ae.frequencyThreshold||'N/A'}\nSerious events:\n${seriousEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${seriousEvents.omitted ? `\n(+${seriousEvents.omitted} more serious events not shown)` : ''}\nOther/non-serious events:\n${otherEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${otherEvents.omitted ? `\n(+${otherEvents.omitted} more not shown)` : ''}\nAll-cause mortality/deaths and group flow: ${JSON.stringify(ae.eventGroups||[]).slice(0,600)}`);
+  } else {
+    hasResults = false;
+    out.push(`## RESULTS\nNo results have been posted to ClinicalTrials.gov for this trial. Only registry/protocol information (above) is available.`);
+  }
+
+  return out.join('\n\n');
+}
+
+// ---------- rendering the ledger card ----------
+function renderLedger(study){
+  const id = study.protocolSection?.identificationModule || {};
+  const status = study.protocolSection?.statusModule || {};
+  const sponsor = study.protocolSection?.sponsorCollaboratorsModule || {};
+  const design = study.protocolSection?.designModule || {};
+  const cond = study.protocolSection?.conditionsModule || {};
+
+  els.ledgerCard.innerHTML = `
+    <div class="nct">${esc(id.nctId||'')}</div>
+    <h2>${esc(id.briefTitle||'Untitled trial')}</h2>
+    <div class="ledger-field"><span class="label">Status</span>${esc(status.overallStatus||'N/A')}</div>
+    <div class="ledger-field"><span class="label">Phase</span>${esc((design.phases||[]).join(', ')||'N/A')}</div>
+    <div class="ledger-field"><span class="label">Sponsor</span>${esc(sponsor.leadSponsor?.name||'N/A')}</div>
+    <div class="ledger-field"><span class="label">Conditions</span>${esc((cond.conditions||[]).join(', ')||'N/A')}</div>
+    <div class="ledger-field"><span class="label">Enrollment</span>${esc(design.enrollmentInfo?.count||'N/A')}</div>
+    <div class="results-flag ${hasResults ? 'has-results' : 'no-results'}">${hasResults ? '✓ Results posted' : '✕ No results posted yet'}</div>
+    <span class="change-trial" id="changeTrialBtn">← Search a different trial</span>
+  `;
+  document.getElementById('changeTrialBtn').addEventListener('click', resetToSearch);
+}
+
+function renderSuggestions(){
+  const base = [
+    'Summarize the study design in plain terms',
+    'What are the key inclusion/exclusion criteria?',
+    'What were the primary outcome results?',
+    'What adverse events were most common?'
+  ];
+  els.suggestionChips.innerHTML = '';
+  base.forEach(s => {
+    const chip = document.createElement('div');
+    chip.className = 'suggestion-chip';
+    chip.textContent = s;
+    chip.addEventListener('click', () => { els.chatInput.value = s; sendMessage(); });
+    els.suggestionChips.appendChild(chip);
+  });
+}
+
+function resetToSearch(){
+  currentTrial = null;
+  trialContext = '';
+  chatHistory = [];
+  els.mainLayout.style.display = 'none';
+  document.getElementById('searchBlock').style.display = 'block';
+  els.chatScroll.innerHTML = '';
+  els.searchInput.value = '';
+  els.resultsList.innerHTML = '';
+}
+
+// ---------- loading a trial ----------
+async function loadTrial(nctId){
+  els.searchError.innerHTML = '';
+  els.resultsList.innerHTML = '<div class="hint"><span class="spinner"></span>Loading trial record…</div>';
+  try{
+    const study = await fetchTrialById(nctId);
+    currentTrial = study;
+    trialContext = buildContext(study);
+    chatHistory = [];
+    renderLedger(study);
+    document.getElementById('searchBlock').style.display = 'none';
+    els.mainLayout.style.display = 'grid';
+    els.chatScroll.innerHTML = '';
+    els.emptyState.style.display = 'flex';
+    els.chatScroll.appendChild(els.emptyState);
+    renderSuggestions();
+  } catch(err){
+    els.resultsList.innerHTML = '';
+    els.searchError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+// ---------- search flow ----------
+async function handleSearch(){
+  const term = els.searchInput.value.trim();
+  if(!term) return;
+  els.searchError.innerHTML = '';
+  els.resultsList.innerHTML = '<div class="hint"><span class="spinner"></span>Searching ClinicalTrials.gov…</div>';
+
+  if(isNctId(term)){
+    await loadTrial(term);
+    return;
+  }
+  try{
+    const studies = await searchTrials(term);
+    renderResults(studies);
+  } catch(err){
+    els.resultsList.innerHTML = '';
+    els.searchError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
+  }
+}
+
+els.searchBtn.addEventListener('click', handleSearch);
+els.searchInput.addEventListener('keydown', e => { if(e.key === 'Enter') handleSearch(); });
+
+// ---------- chat flow ----------
+function appendMessage(role, text, sources){
+  if(els.emptyState.parentNode) els.emptyState.remove();
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = text;
+  wrap.appendChild(bubble);
+  if(sources && sources.length){
+    const sl = document.createElement('div');
+    sl.className = 'sources-line';
+    sources.forEach(s => {
+      const chip = document.createElement('span');
+      chip.className = 'source-chip';
+      chip.textContent = '§ ' + s;
+      sl.appendChild(chip);
+    });
+    wrap.appendChild(sl);
+  }
+  els.chatScroll.appendChild(wrap);
+  els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
+  return wrap;
+}
+
+function parseSources(text){
+  const match = text.match(/Sources?:\s*(.+)\s*$/i);
+  if(!match) return { body: text.trim(), sources: [] };
+  const body = text.slice(0, match.index).trim();
+  const sources = match[1].split(',').map(s => s.trim()).filter(Boolean);
+  return { body, sources };
+}
+
+async function sendMessage(){
+  const text = els.chatInput.value.trim();
+  if(!text || !currentTrial) return;
+  els.chatInput.value = '';
+  appendMessage('user', text);
+  chatHistory.push({ role: 'user', content: text });
+
+  const typingWrap = document.createElement('div');
+  typingWrap.className = 'msg assistant';
+  typingWrap.innerHTML = `<div class="bubble typing"><span class="spinner"></span>Reading the trial record…</div>`;
+  els.chatScroll.appendChild(typingWrap);
+  els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
+  els.sendBtn.disabled = true;
+
+  const systemPrompt = `You are a clinical evidence assistant. Answer questions using ONLY the trial data provided below — never outside knowledge, never speculation about this specific trial.
+Rules:
+- Be direct and concise. No filler, no hedging, no consulting-speak.
+- Quote specific numbers, criteria, or wording from the data when relevant.
+- If the data doesn't contain the answer, say so plainly rather than guessing.
+- If asked about results and the trial has no posted results, say that clearly.
+- End every response with one line in the exact format: "Sources: X, Y" naming the section header(s) above that you drew from (e.g. Sources: Eligibility, Outcome Measures). Use short section names, not the full ## heading text with "RESULTS:" prefix removed where natural.
+
+TRIAL DATA:
+${trialContext}`;
+
+  try{
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system: systemPrompt,
+        messages: chatHistory
+      })
+    });
+    const data = await res.json();
+    typingWrap.remove();
+    if(data.error){
+      appendMessage('assistant', `Error: ${data.error.message || 'request failed'}`);
+      return;
+    }
+    const fullText = (data.content||[]).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    const { body, sources } = parseSources(fullText);
+    appendMessage('assistant', body, sources);
+    chatHistory.push({ role: 'assistant', content: fullText });
+  } catch(err){
+    typingWrap.remove();
+    appendMessage('assistant', `Something went wrong reaching the model: ${err.message}`);
+  } finally {
+    els.sendBtn.disabled = false;
+  }
+}
+
+els.sendBtn.addEventListener('click', sendMessage);
+els.chatInput.addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.shiftKey){
+    e.preventDefault();
+    sendMessage();
+  }
+});
+</script>
+</body>
+</html>
