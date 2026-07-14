@@ -620,18 +620,112 @@ function buildContext(study){
     }).join('\n');
     out.push(`## RESULTS: BASELINE CHARACTERISTICS\n${baseText || 'N/A'}${baseMeasures.omitted ? `\n(+${baseMeasures.omitted} more baseline measures not shown)` : ''}`);
 
-    const outMeasures = truncateList(r.outcomeMeasuresModule?.outcomeMeasures||[], 6);
-    const outText = outMeasures.shown.map(m => {
-      const classes = (m.classes||[]).map(cl => {
-        const cats = (cl.categories||[]).map(c => {
-          const vals = (c.measurements||[]).map(v => `${v.groupId}=${v.value}${v.spread ? ' ±'+v.spread : ''}`).join(', ');
-          return `${c.title||''}: ${vals}`;
+    const resultGroups = r.outcomeMeasuresModule?.groups || [];
+    const resultGroupText = resultGroups.map(g => `- ${g.id || 'N/A'}: ${g.title || 'Untitled group'}${g.description ? ' — ' + g.description : ''}`).join('\n');
+    out.push(`## RESULTS: OUTCOME GROUPS\n${resultGroupText || 'N/A'}`);
+
+    function cleanVal(v){
+      return v === undefined || v === null || v === '' ? 'N/A' : v;
+    }
+
+    function compactJson(value, maxLen = 1600){
+      try{
+        const json = JSON.stringify(value, null, 2);
+        if(!json || json === 'null' || json === 'undefined') return '';
+        return json.length > maxLen ? json.slice(0, maxLen) + '\n... [truncated]' : json;
+      } catch(_){
+        return '';
+      }
+    }
+
+    function formatMeasurement(v){
+      const parts = [];
+      if(v.groupId) parts.push(`group ${v.groupId}`);
+      if(v.value !== undefined) parts.push(`value ${v.value}`);
+      if(v.lowerLimit !== undefined || v.upperLimit !== undefined) parts.push(`range ${cleanVal(v.lowerLimit)} to ${cleanVal(v.upperLimit)}`);
+      if(v.spread !== undefined) parts.push(`spread ${v.spread}`);
+      if(v.comment) parts.push(`comment: ${v.comment}`);
+      return parts.join('; ') || compactJson(v, 300);
+    }
+
+    function formatAnalysis(a){
+      const groupIds = Array.isArray(a.groupIds) ? a.groupIds.join(', ') : cleanVal(a.groupId);
+      const parts = [];
+
+      parts.push(`Groups compared: ${groupIds}`);
+      parts.push(`Method: ${cleanVal(a.statisticalMethod || a.method || a.testName)}`);
+      if(a.methodDescription) parts.push(`Method description: ${a.methodDescription}`);
+      if(a.paramType || a.paramValue) parts.push(`Effect/estimate: ${cleanVal(a.paramValue || a.estimateValue)} ${a.paramType ? '(' + a.paramType + ')' : ''}`);
+      if(a.dispersionType || a.dispersionValue) parts.push(`Dispersion: ${cleanVal(a.dispersionValue)} ${a.dispersionType ? '(' + a.dispersionType + ')' : ''}`);
+      if(a.pValue !== undefined || a.pValueRange || a.pValueComment) parts.push(`P-value: ${cleanVal(a.pValue || a.pValueRange)}${a.pValueComment ? ' — ' + a.pValueComment : ''}`);
+      if(a.ciPctValue || a.ciLowerLimit || a.ciUpperLimit || a.ciLowerLimitComment || a.ciUpperLimitComment){
+        parts.push(`Confidence interval: ${a.ciPctValue ? a.ciPctValue + '% ' : ''}${cleanVal(a.ciLowerLimit)} to ${cleanVal(a.ciUpperLimit)}${a.ciLowerLimitComment ? ' — lower comment: ' + a.ciLowerLimitComment : ''}${a.ciUpperLimitComment ? ' — upper comment: ' + a.ciUpperLimitComment : ''}`);
+      }
+      if(a.nonInferiorityType) parts.push(`Non-inferiority/superiority type: ${a.nonInferiorityType}`);
+      if(a.statisticalComment) parts.push(`Statistical comment: ${a.statisticalComment}`);
+      if(a.estimateComment) parts.push(`Estimate comment: ${a.estimateComment}`);
+
+      const knownKeys = new Set([
+        'groupIds','groupId','statisticalMethod','method','testName','methodDescription','paramType','paramValue','estimateValue',
+        'dispersionType','dispersionValue','pValue','pValueRange','pValueComment','ciPctValue','ciLowerLimit','ciUpperLimit',
+        'ciLowerLimitComment','ciUpperLimitComment','nonInferiorityType','statisticalComment','estimateComment'
+      ]);
+      const extra = Object.fromEntries(Object.entries(a).filter(([k,v]) => !knownKeys.has(k) && v !== undefined && v !== null && v !== ''));
+      const extraJson = compactJson(extra, 700);
+      if(extraJson && extraJson !== '{}') parts.push(`Additional analysis fields: ${extraJson}`);
+
+      return parts.filter(Boolean).join('; ');
+    }
+
+    let anyStatisticalAnalysis = false;
+    const allOutcomeMeasures = r.outcomeMeasuresModule?.outcomeMeasures || [];
+    const outMeasures = truncateList(allOutcomeMeasures, 60);
+
+    const outText = outMeasures.shown.map((m, index) => {
+      const classes = (m.classes || []).map(cl => {
+        const cats = (cl.categories || []).map(c => {
+          const vals = (c.measurements || []).map(formatMeasurement).join(', ');
+          return `${c.title || 'Category'}: ${vals || 'N/A'}`;
         }).join(' | ');
-        return cats;
+        return `${cl.title ? cl.title + ': ' : ''}${cats || 'N/A'}`;
       }).join(' || ');
-      return `- [${m.type||''}] ${m.title} — ${m.description||''} (${m.unitOfMeasure||''}, time frame: ${m.timeFrame||''})\n  Results: ${classes}`;
-    }).join('\n');
-    out.push(`## RESULTS: OUTCOME MEASURES\n${outText || 'N/A'}${outMeasures.omitted ? `\n(+${outMeasures.omitted} more outcome measures not shown — ask about a specific one by name)` : ''}`);
+
+      const analyses = m.analyses || [];
+      if(analyses.length > 0) anyStatisticalAnalysis = true;
+
+      const analysisText = analyses.length
+        ? analyses.map((a, i) => `Analysis ${i + 1}: ${formatAnalysis(a)}`).join('\n  ')
+        : 'No p-values, confidence intervals, statistical methods, or significance testing were listed for this outcome in the ClinicalTrials.gov analysis fields.';
+
+      const denominatorText = compactJson(m.denoms || m.denomsUnits || m.denominatorUnits || '', 700);
+      const extraOutcomeFields = compactJson({
+        reportingStatus: m.reportingStatus,
+        populationDescription: m.populationDescription,
+        paramType: m.paramType,
+        dispersionType: m.dispersionType,
+        unitOfMeasure: m.unitOfMeasure,
+        otherAnalysisFieldsRaw: m.analyses
+      }, 1200);
+
+      return `Outcome ${index + 1}: [${m.type || 'Outcome'}] ${m.title || 'Untitled outcome'}
+Description: ${m.description || 'N/A'}
+Time frame: ${m.timeFrame || 'N/A'}
+Unit of measure: ${m.unitOfMeasure || 'N/A'}
+Population description: ${m.populationDescription || 'N/A'}
+Results: ${classes || 'N/A'}
+Denominators: ${denominatorText || 'N/A'}
+Statistical analysis: ${analysisText}
+Additional outcome metadata: ${extraOutcomeFields || 'N/A'}`;
+    }).join('\n\n');
+
+    out.push(`## RESULTS: OUTCOME MEASURES AND STATISTICAL ANALYSES
+${outText || 'N/A'}
+Overall statistical analysis availability: ${anyStatisticalAnalysis ? 'At least one outcome includes statistical analysis fields in ClinicalTrials.gov.' : 'No p-values, confidence intervals, statistical methods, or significance testing were found in the ClinicalTrials.gov outcome analysis fields included in this record.'}${outMeasures.omitted ? `\n(+${outMeasures.omitted} more outcome measures not shown because this trial has many outcomes — ask about a specific outcome name if needed)` : ''}`);
+
+    const rawResultsJson = compactJson(r, 50000);
+    out.push(`## RAW CLINICALTRIALS.GOV RESULTS JSON EXCERPT
+This excerpt is included so the assistant can answer less common results questions beyond the manually summarized fields. If something is not in this JSON excerpt, say it is not available in the provided registry data.
+${rawResultsJson || 'N/A'}`);
 
     const ae = r.adverseEventsModule || {};
     const seriousEvents = truncateList(ae.seriousEvents||[], 12);
@@ -677,7 +771,8 @@ function renderSuggestions(){
     'Summarize the study design in plain terms',
     'What are the key inclusion/exclusion criteria?',
     'What were the primary outcome results?',
-    'What adverse events were most common?'
+    'What adverse events were most common?',
+    'Were p-values or confidence intervals reported?'
   ];
   els.suggestionChips.innerHTML = '';
   base.forEach(s => {
@@ -863,6 +958,7 @@ Rules:
 - Use PubMed abstracts and open-access full text only when those sections are provided below.
 - Clearly distinguish registry data from literature/article data when they differ.
 - If the data doesn't contain the answer, say so plainly rather than guessing.
+- If asked about statistical analysis, p-values, confidence intervals, or significance testing, check the ClinicalTrials.gov statistical analysis fields and the raw results JSON excerpt. If those fields are absent, say they are not reported in the provided record.
 - If asked about results and the trial has no posted results or article results, say that clearly.
 - Do not claim to read paywalled articles. Only use abstracts and legal open-access full text provided below.
 - End every response with one line in the exact format: "Sources: X, Y" naming the section(s) you drew from, such as ClinicalTrials.gov Design, ClinicalTrials.gov Results, PubMed Abstract, Open-Access Full Text.
