@@ -1,35 +1,27 @@
-# Trial Ledger — Fixed version
+# Clinical Trial Evidence Assistant
 
-This fixes the browser `Failed to fetch` issue by moving the Claude/Anthropic API call into a small Node/Express backend.
+This version searches ClinicalTrials.gov, loads a selected trial record, searches PubMed, and tries to retrieve legal open-access full text through Europe PMC.
 
-## Run it
+It does not bypass paywalls. If no legal open-access full text is found, it uses PubMed/Europe PMC abstracts and the ClinicalTrials.gov record.
 
-1. Install Node.js 18 or newer.
-2. Open this folder in Terminal.
-3. Install packages:
+## Run locally
 
 ```bash
 npm install
-```
-
-4. Create your real `.env` file:
-
-```bash
 cp .env.example .env
-```
-
-5. Open `.env` and replace `sk-ant-api03-your-key-here` with your real Anthropic API key.
-
-6. Start the app:
-
-```bash
+open -e .env
 npm start
 ```
 
-7. Open:
+Open:
 
 ```text
 http://localhost:3000
 ```
 
-Do not open `public/index.html` directly by double-clicking it. The page must be served by the backend so `/api/chat` exists.
+## What changed
+
+- Keyword search now retrieves many matching ClinicalTrials.gov trials instead of only 10.
+- After selecting a trial, the app searches PubMed and Europe PMC.
+- If a legal open-access article is available, the app adds a full-text snippet to the chatbot context.
+- The chatbot is instructed to separate ClinicalTrials.gov evidence from article evidence.

@@ -1,17 +1,17 @@
-# Deploy Trial Ledger to Render
+# Deploy to Render
 
-This is the public-website version of the app. It is a Node/Express app with a static frontend in `public/` and a backend route at `/api/chat`.
+Use Render → New → Web Service.
 
-## Important security step
-
-Do not commit a real `.env` file or API key to GitHub. Put the key in Render's Environment Variables only.
-
-## Render settings
+Settings:
 
 - Build Command: `npm install`
 - Start Command: `npm start`
 - Environment Variables:
   - `ANTHROPIC_API_KEY` = your new Anthropic API key
   - `ANTHROPIC_MODEL` = `claude-sonnet-5`
+  - optional: `NCBI_EMAIL` = your email
+  - optional: `NCBI_API_KEY` = your NCBI API key
 
-Render will also set `PORT` automatically.
+Do not commit `.env` or API keys to GitHub.
+
+This app uses ClinicalTrials.gov, PubMed/NCBI E-utilities, and Europe PMC open-access endpoints. It does not bypass article paywalls.

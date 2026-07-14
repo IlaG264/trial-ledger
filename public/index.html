@@ -217,6 +217,41 @@
   .results-flag.has-results{background:var(--teal-soft); color:var(--teal-deep);}
   .results-flag.no-results{background:var(--rust-soft); color:var(--rust);}
 
+  .literature-box{
+    margin-top:12px;
+    padding:10px;
+    border:1px solid var(--rule);
+    border-radius:3px;
+    background:#fff;
+    font-size:12px;
+    line-height:1.45;
+  }
+  .literature-box .label{
+    display:block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--ink-soft);
+    margin-bottom:4px;
+  }
+  .literature-item{
+    margin-top:6px;
+    padding-top:6px;
+    border-top:1px solid var(--rule);
+  }
+  .literature-item:first-child{
+    border-top:none;
+    padding-top:0;
+  }
+  .literature-meta{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+    color:var(--ink-soft);
+    margin-top:2px;
+  }
+
+
   .chat-panel{
     background:#fff;
     border:1px solid var(--rule);
@@ -379,15 +414,15 @@
       <div class="kicker">Evidence Extraction Tool</div>
       <h1>Clinical Trial Evidence Assistant</h1>
     </div>
-    <div class="kicker" id="sourceNote">Source: ClinicalTrials.gov </div>
+    <div class="kicker" id="sourceNote">Sources: ClinicalTrials.gov + PubMed/Open Access</div>
   </header>
 
   <div class="search-block" id="searchBlock">
     <div class="search-row">
-      <input type="text" id="searchInput" placeholder="Enter NCT number (e.g. NCT04280705)" />
+      <input type="text" id="searchInput" placeholder="Enter a trial name, condition, or NCT number (e.g. NCT04280705)" />
       <button id="searchBtn">Search</button>
     </div>
-    <div class="hint">Paste an exact NCT number.</div>
+    <div class="hint">Paste an exact NCT number to load a specific trial directly.</div>
     <div class="results-list" id="resultsList"></div>
     <div id="searchError"></div>
   </div>
@@ -426,7 +461,9 @@ const els = {
 };
 
 let currentTrial = null;      // raw study JSON
-let trialContext = "";        // condensed text fed to the model
+let trialContext = "";        // condensed registry text fed to the model
+let literatureContext = "";   // PubMed abstracts + open-access full text snippets
+let literatureArticles = [];   // metadata shown in the UI
 let chatHistory = [];         // [{role, content}]
 let hasResults = false;
 
@@ -448,11 +485,30 @@ function isNctId(str){
 
 // ---------- ClinicalTrials.gov API ----------
 async function searchTrials(term){
-  const url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(term)}&pageSize=10`;
-  const res = await fetch(url);
-  if(!res.ok) throw new Error(`ClinicalTrials.gov search failed (${res.status})`);
-  const data = await res.json();
-  return data.studies || [];
+  let allStudies = [];
+  let pageToken = null;
+  const pageSize = 100;
+  const maxStudies = 500;
+
+  do {
+    let url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(term)}&pageSize=${pageSize}`;
+    if(pageToken){
+      url += `&pageToken=${encodeURIComponent(pageToken)}`;
+    }
+
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`ClinicalTrials.gov search failed (${res.status})`);
+
+    const data = await res.json();
+    allStudies = allStudies.concat(data.studies || []);
+    pageToken = data.nextPageToken || null;
+
+    // Safety cap: large keywords can return thousands of trials.
+    // This keeps the browser usable while still showing far more than 10.
+    if(allStudies.length >= maxStudies) break;
+  } while(pageToken);
+
+  return allStudies.slice(0, maxStudies);
 }
 
 async function fetchTrialById(nctId){
@@ -469,6 +525,12 @@ function renderResults(studies){
     els.resultsList.innerHTML = '<div class="hint">No trials matched that search. Try a broader term or a direct NCT number.</div>';
     return;
   }
+
+  const countNote = document.createElement('div');
+  countNote.className = 'hint';
+  countNote.textContent = `${studies.length} trial${studies.length === 1 ? '' : 's'} found. Click one to load its evidence record.`;
+  els.resultsList.appendChild(countNote);
+
   studies.forEach(study => {
     const id = study.protocolSection?.identificationModule;
     const status = study.protocolSection?.statusModule;
@@ -601,6 +663,10 @@ function renderLedger(study){
     <div class="ledger-field"><span class="label">Conditions</span>${esc((cond.conditions||[]).join(', ')||'N/A')}</div>
     <div class="ledger-field"><span class="label">Enrollment</span>${esc(design.enrollmentInfo?.count||'N/A')}</div>
     <div class="results-flag ${hasResults ? 'has-results' : 'no-results'}">${hasResults ? '✓ Results posted' : '✕ No results posted yet'}</div>
+    <div class="literature-box">
+      <span class="label">Literature</span>
+      <div id="literatureStatus">PubMed/open-access search will run after this trial loads.</div>
+    </div>
     <span class="change-trial" id="changeTrialBtn">← Search a different trial</span>
   `;
   document.getElementById('changeTrialBtn').addEventListener('click', resetToSearch);
@@ -623,9 +689,72 @@ function renderSuggestions(){
   });
 }
 
+
+function getTrialIdentifiers(study){
+  const id = study.protocolSection?.identificationModule || {};
+  return {
+    nctId: id.nctId || '',
+    briefTitle: id.briefTitle || '',
+    officialTitle: id.officialTitle || ''
+  };
+}
+
+function renderLiteratureStatus(html){
+  const el = document.getElementById('literatureStatus');
+  if(el) el.innerHTML = html;
+}
+
+function renderLiteratureArticles(articles){
+  if(!articles || articles.length === 0){
+    renderLiteratureStatus('No PubMed or open-access article matches were found automatically. The chatbot will use the ClinicalTrials.gov record only.');
+    return;
+  }
+
+  const shown = articles.slice(0, 5).map(a => `
+    <div class="literature-item">
+      <div>${esc(a.title || 'Untitled article')}</div>
+      <div class="literature-meta">
+        ${esc([a.sourceLabel, a.pmid ? 'PMID ' + a.pmid : '', a.pmcid || '', a.year || '', a.openAccessFullTextFound ? 'open-access full text found' : 'abstract/metadata only'].filter(Boolean).join(' · '))}
+      </div>
+    </div>
+  `).join('');
+
+  renderLiteratureStatus(`Found ${articles.length} literature source${articles.length === 1 ? '' : 's'}. ${shown}`);
+}
+
+async function loadRelatedLiterature(study){
+  literatureContext = '';
+  literatureArticles = [];
+  renderLiteratureStatus('<span class="spinner"></span>Searching PubMed and legal open-access full text…');
+
+  try{
+    const ids = getTrialIdentifiers(study);
+    const res = await fetch('/api/literature', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ids)
+    });
+
+    const data = await res.json();
+    if(!res.ok || data.error){
+      throw new Error(data.error?.message || 'literature search failed');
+    }
+
+    literatureContext = data.context || '';
+    literatureArticles = data.articles || [];
+    renderLiteratureArticles(literatureArticles);
+  } catch(err){
+    literatureContext = '';
+    literatureArticles = [];
+    renderLiteratureStatus(`Literature search failed: ${esc(err.message)}. The chatbot will still use the ClinicalTrials.gov record.`);
+  }
+}
+
 function resetToSearch(){
   currentTrial = null;
   trialContext = '';
+  literatureContext = '';
+  literatureArticles = [];
   chatHistory = [];
   els.mainLayout.style.display = 'none';
   document.getElementById('searchBlock').style.display = 'block';
@@ -650,6 +779,7 @@ async function loadTrial(nctId){
     els.emptyState.style.display = 'flex';
     els.chatScroll.appendChild(els.emptyState);
     renderSuggestions();
+    loadRelatedLiterature(study);
   } catch(err){
     els.resultsList.innerHTML = '';
     els.searchError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -661,7 +791,7 @@ async function handleSearch(){
   const term = els.searchInput.value.trim();
   if(!term) return;
   els.searchError.innerHTML = '';
-  els.resultsList.innerHTML = '<div class="hint"><span class="spinner"></span>Searching ClinicalTrials.gov…</div>';
+  els.resultsList.innerHTML = '<div class="hint"><span class="spinner"></span>Searching ClinicalTrials.gov and loading matching trials…</div>';
 
   if(isNctId(term)){
     await loadTrial(term);
@@ -726,16 +856,22 @@ async function sendMessage(){
   els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
   els.sendBtn.disabled = true;
 
-  const systemPrompt = `You are a clinical evidence assistant. Answer questions using ONLY the trial data provided below — never outside knowledge, never speculation about this specific trial.
+  const systemPrompt = `You are a clinical evidence assistant. Answer questions using ONLY the evidence data provided below — never outside knowledge, never speculation about this specific trial.
 Rules:
 - Be direct and concise. No filler, no hedging, no consulting-speak.
-- Quote specific numbers, criteria, or wording from the data when relevant.
+- Prefer ClinicalTrials.gov for registry/protocol facts and posted trial results.
+- Use PubMed abstracts and open-access full text only when those sections are provided below.
+- Clearly distinguish registry data from literature/article data when they differ.
 - If the data doesn't contain the answer, say so plainly rather than guessing.
-- If asked about results and the trial has no posted results, say that clearly.
-- End every response with one line in the exact format: "Sources: X, Y" naming the section header(s) above that you drew from (e.g. Sources: Eligibility, Outcome Measures). Use short section names, not the full ## heading text with "RESULTS:" prefix removed where natural.
+- If asked about results and the trial has no posted results or article results, say that clearly.
+- Do not claim to read paywalled articles. Only use abstracts and legal open-access full text provided below.
+- End every response with one line in the exact format: "Sources: X, Y" naming the section(s) you drew from, such as ClinicalTrials.gov Design, ClinicalTrials.gov Results, PubMed Abstract, Open-Access Full Text.
 
-TRIAL DATA:
-${trialContext}`;
+CLINICALTRIALS.GOV REGISTRY DATA:
+${trialContext}
+
+PUBMED / OPEN-ACCESS LITERATURE DATA:
+${literatureContext || 'No PubMed abstract or legal open-access full-text content was found automatically for this trial.'}`;
 
   try{
     const res = await fetch('/api/chat', {
