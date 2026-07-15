@@ -475,16 +475,14 @@
 
 <script>
 /*
-  JAVASCRIPT SECTION
-  ------------------------------------------------------------
-  This is the actual app logic.
+  JAVASCRIPT SECTION -> app logic 
 
-  Main idea:
+  Framework: 
   1) Search ClinicalTrials.gov.
   2) Load a selected trial.
-  3) Convert the raw JSON into readable text called trialContext.
-  4) Send trialContext + the user's question to /api/chat.
-  5) Backend calls Claude safely with the API key hidden.
+  3) Convert raw JSON into readable text called trialContext 
+  4) Send trialContext + the user's question to claude API 
+  5) Backend calls Claude 
 */
 
 const els = {
@@ -508,7 +506,7 @@ let literatureArticles = [];
 let chatHistory = [];
 let hasResults = false;
 
-// ---------- helper functions ----------
+// helper functions
 function esc(str){
   // Makes text safe before putting it into the page.
   const d = document.createElement('div');
@@ -527,14 +525,11 @@ function isNctId(str){
   return /^NCT\d{8}$/i.test(str.trim());
 }
 
-// ---------- ClinicalTrials.gov API ----------
+// ClinicalTrials.gov API 
 async function searchTrials(term){
   /*
-    This searches ClinicalTrials.gov by keyword.
+    Searches ClinicalTrials.gov by keyword.
 
-    Example:
-    User types "glioblastoma"
-    The API returns many matching trials.
   */
 
   let allStudies = [];
@@ -569,9 +564,6 @@ async function fetchTrialById(nctId){
   /*
     This loads one exact trial from ClinicalTrials.gov.
 
-    Example:
-    User types NCT04280705
-    This fetches the full record for that trial.
   */
 
   const url = `https://clinicaltrials.gov/api/v2/studies/${encodeURIComponent(nctId.toUpperCase())}`;
@@ -584,7 +576,7 @@ async function fetchTrialById(nctId){
   return await res.json();
 }
 
-// ---------- render keyword search results ----------
+// Render keyword search results 
 function renderResults(studies){
   // Clears old search results.
   els.resultsList.innerHTML = '';
@@ -624,14 +616,9 @@ function renderResults(studies){
   });
 }
 
-// ---------- build AI context from ClinicalTrials.gov JSON ----------
+// build AI context from ClinicalTrials.gov JSON
 function buildContext(study){
   /*
-    This is the most important function for evidence accuracy.
-
-    ClinicalTrials.gov gives us a big JSON object.
-    Claude cannot automatically see all of that unless we send it.
-    So this function extracts key fields and turns them into readable text.
 
     The final output of this function is trialContext.
   */
