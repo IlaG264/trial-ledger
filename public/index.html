@@ -1,25 +1,49 @@
 <!DOCTYPE html>
 <!--
-  Clinical Trial Evidence Assistant: 
-  - FRONTEND file -> controls what the user sees in the browser.
-  - The backend is server.js -> "talks" to Claude and PubMed.
-  - This HTML file -> 
-      1) Searches ClinicalTrials.gov for trials.
-      2) Builds clean trialContext from the raw ClinicalTrials.gov JSON.
-      3) Sends the user's chat question + trialContext to the backend
+  Clinical Trial Evidence Assistant
+  ------------------------------------------------------------
+  Student-style explanation:
+
+  This is the FRONTEND file.
+
+  The frontend is what the user sees:
+  - Search bar
+  - Trial result cards
+  - Trial summary card
+  - Chat window
+  - Ask button
+
+  This file has 3 parts:
+  1) HTML = page structure
+  2) CSS = styling / UI design
+  3) JavaScript = app logic
+
+  The backend is separate in server.js.
+  The backend safely talks to Claude and PubMed/open-access sources.
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Clinical Trial Evidence Assistant</title>
+
+<!-- Google Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
 <style>
   /*
-    CSS -> 
-    Controls the look of the page 
+    CSS SECTION
+    ------------------------------------------------------------
+    CSS controls the appearance of the page.
+
+    This includes:
+    - colors
+    - spacing
+    - cards
+    - buttons
+    - search results
+    - chat bubbles
   */
 
   :root{
@@ -81,7 +105,7 @@
   .search-block{
     background:var(--paper-raised);
     border:1px solid var(--rule);
-    border-radius:4px;
+    border-radius:8px;
     padding:18px;
     margin-bottom:20px;
   }
@@ -97,7 +121,7 @@
     min-width:220px;
     padding:11px 12px;
     border:1px solid var(--rule);
-    border-radius:3px;
+    border-radius:6px;
     font-family:'IBM Plex Sans', sans-serif;
     font-size:14px;
     background:#fff;
@@ -113,7 +137,7 @@
     font-family:'IBM Plex Sans', sans-serif;
     font-weight:500;
     font-size:13.5px;
-    border-radius:3px;
+    border-radius:6px;
     border:1px solid var(--teal-deep);
     background:var(--teal);
     color:#fff;
@@ -136,47 +160,132 @@
     margin-top:14px;
     display:flex;
     flex-direction:column;
-    gap:8px;
+    gap:10px;
   }
+
+  /*
+    NICE SEARCH RESULT CARDS
+    ------------------------------------------------------------
+    These are the cards that appear after a keyword search.
+
+    Instead of showing only the trial title, each card now shows:
+    - title
+    - NCT ID
+    - status
+    - phase
+    - sponsor
+    - condition
+    - whether it is a registry record or may have results
+  */
 
   .result-card{
     border:1px solid var(--rule);
     background:#fff;
-    border-radius:3px;
-    padding:12px 14px;
+    border-radius:10px;
+    padding:14px 16px;
     cursor:pointer;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.04);
+    transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+  }
+
+  .result-card:hover{
+    border-color:var(--teal);
+    box-shadow:0 6px 18px rgba(0,0,0,0.08);
+    transform:translateY(-1px);
+  }
+
+  .result-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:14px;
+  }
+
+  .result-title{
+    font-size:15px;
+    font-weight:600;
+    line-height:1.35;
+    color:var(--ink);
+  }
+
+  .result-nct{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    color:var(--teal-deep);
+    background:var(--teal-soft);
+    border:1px solid var(--teal);
+    padding:4px 7px;
+    border-radius:999px;
+    white-space:nowrap;
+  }
+
+  .result-meta-grid{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:8px 12px;
+  }
+
+  @media(max-width:640px){
+    .result-meta-grid{
+      grid-template-columns:1fr;
+    }
+  }
+
+  .result-meta-item{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    line-height:1.35;
+  }
+
+  .result-meta-item strong{
+    display:block;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--ink-soft);
+    margin-bottom:2px;
+  }
+
+  .result-bottom{
     display:flex;
     justify-content:space-between;
     align-items:center;
-    gap:12px;
-  }
-
-  .result-card:hover{border-color:var(--teal);}
-  .result-card .rc-title{font-size:14px; font-weight:500;}
-
-  .result-card .rc-meta{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:11px;
-    color:var(--ink-soft);
-    white-space:nowrap;
+    gap:10px;
+    border-top:1px solid var(--rule);
+    padding-top:10px;
   }
 
   .status-pill{
     display:inline-block;
-    padding:2px 8px;
-    border-radius:10px;
+    padding:4px 9px;
+    border-radius:999px;
     font-size:10.5px;
     font-family:'IBM Plex Mono', monospace;
     text-transform:uppercase;
     letter-spacing:.04em;
     background:var(--teal-soft);
     color:var(--teal-deep);
-    margin-left:8px;
   }
 
   .status-pill.stopped{
     background:var(--rust-soft);
     color:var(--rust);
+  }
+
+  .results-mini{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10.5px;
+    color:var(--ink-soft);
+  }
+
+  .open-trial-text{
+    font-size:12px;
+    color:var(--teal-deep);
+    font-weight:600;
   }
 
   .layout{
@@ -192,7 +301,7 @@
   .ledger-card{
     background:var(--paper-raised);
     border:1px solid var(--rule);
-    border-radius:4px;
+    border-radius:8px;
     position:relative;
     padding:18px 16px 16px;
   }
@@ -204,7 +313,7 @@
     height:6px;
     background:repeating-linear-gradient(90deg, var(--ink) 0 8px, transparent 8px 16px);
     opacity:0.15;
-    border-radius:4px 4px 0 0;
+    border-radius:8px 8px 0 0;
   }
 
   .ledger-card .nct{
@@ -249,7 +358,7 @@
   .results-flag{
     margin-top:12px;
     padding:8px 10px;
-    border-radius:3px;
+    border-radius:6px;
     font-size:11.5px;
     font-family:'IBM Plex Mono', monospace;
   }
@@ -267,7 +376,7 @@
   .chat-panel{
     background:#fff;
     border:1px solid var(--rule);
-    border-radius:4px;
+    border-radius:8px;
     display:flex;
     flex-direction:column;
     min-height:520px;
@@ -289,7 +398,7 @@
 
   .msg .bubble{
     padding:12px 14px;
-    border-radius:5px;
+    border-radius:8px;
     font-size:14px;
     line-height:1.55;
     white-space:pre-wrap;
@@ -298,13 +407,13 @@
   .msg.user .bubble{
     background:var(--teal);
     color:#fff;
-    border-radius:5px 5px 2px 5px;
+    border-radius:8px 8px 2px 8px;
   }
 
   .msg.assistant .bubble{
     background:var(--paper);
     border:1px solid var(--rule);
-    border-radius:5px 5px 5px 2px;
+    border-radius:8px 8px 8px 2px;
   }
 
   .sources-line{
@@ -321,7 +430,7 @@
     color:var(--teal-deep);
     border:1px solid var(--teal);
     padding:3px 8px;
-    border-radius:2px;
+    border-radius:4px;
   }
 
   .empty-state{
@@ -390,7 +499,7 @@
     flex:1;
     resize:none;
     border:1px solid var(--rule);
-    border-radius:3px;
+    border-radius:6px;
     padding:10px 12px;
     font-family:'IBM Plex Sans', sans-serif;
     font-size:14px;
@@ -413,7 +522,7 @@
     background:var(--rust-soft);
     color:var(--rust);
     border:1px solid var(--rust);
-    border-radius:3px;
+    border-radius:6px;
     padding:10px 12px;
     font-size:13px;
     margin-top:10px;
@@ -438,6 +547,8 @@
 
 <body>
 <div class="app">
+
+  <!-- Top page header -->
   <header class="masthead">
     <div>
       <div class="kicker">Evidence Extraction Tool</div>
@@ -446,18 +557,29 @@
     <div class="kicker" id="sourceNote">Sources: ClinicalTrials.gov + PubMed/Open Access</div>
   </header>
 
+  <!-- Search area -->
   <div class="search-block" id="searchBlock">
     <div class="search-row">
       <input type="text" id="searchInput" placeholder="Enter a trial name, condition, or NCT number (e.g. NCT04280705)" />
       <button id="searchBtn">Search</button>
     </div>
+
     <div class="hint">Paste an exact NCT number to load a specific trial directly.</div>
+
+    <!-- Search result cards will appear here -->
     <div class="results-list" id="resultsList"></div>
+
+    <!-- Error messages will appear here -->
     <div id="searchError"></div>
   </div>
 
+  <!-- Main app area after a trial is selected -->
   <div class="layout" id="mainLayout" style="display:none;">
+
+    <!-- Left trial summary card -->
     <div class="ledger-card" id="ledgerCard"></div>
+
+    <!-- Chat area -->
     <div class="chat-panel">
       <div class="chat-scroll" id="chatScroll">
         <div class="empty-state" id="emptyState">
@@ -465,26 +587,35 @@
           <div class="suggestions" id="suggestionChips"></div>
         </div>
       </div>
+
       <div class="chat-input-row">
         <textarea id="chatInput" placeholder="e.g. What were the primary outcome results? Who was excluded from enrollment?"></textarea>
         <button id="sendBtn">Ask</button>
       </div>
     </div>
+
   </div>
 </div>
 
 <script>
 /*
-  JAVASCRIPT SECTION -> app logic 
+  JAVASCRIPT SECTION
+  ------------------------------------------------------------
+  This is the logic of the app.
 
-  Framework: 
+  Framework:
   1) Search ClinicalTrials.gov.
   2) Load a selected trial.
-  3) Convert raw JSON into readable text called trialContext 
-  4) Send trialContext + the user's question to claude API 
-  5) Backend calls Claude 
+  3) Convert raw JSON into readable notes called trialContext.
+  4) Send trialContext + the user's question to the backend.
+  5) Backend calls Claude and sends answer back.
+
+  Important:
+  - The frontend does NOT store the Claude API key.
+  - The backend stores the API key safely.
 */
 
+// These are shortcuts to HTML elements on the page.
 const els = {
   searchInput: document.getElementById('searchInput'),
   searchBtn: document.getElementById('searchBtn'),
@@ -499,6 +630,7 @@ const els = {
   sendBtn: document.getElementById('sendBtn'),
 };
 
+// App memory while the user is using the page.
 let currentTrial = null;
 let trialContext = "";
 let literatureContext = "";
@@ -506,30 +638,47 @@ let literatureArticles = [];
 let chatHistory = [];
 let hasResults = false;
 
-// helper functions
+// ---------- helper functions ----------
 function esc(str){
-  // Makes text safe before putting it into the page.
+  /*
+    This makes text safe before placing it into the page.
+    It helps avoid weird HTML issues if the trial title contains symbols.
+  */
   const d = document.createElement('div');
   d.textContent = str ?? '';
   return d.innerHTML;
 }
 
 function truncateList(arr, n){
-  // Shows only the first n items from long lists.
+  /*
+    Some clinical trials have very long lists.
+    This shows only the first n items so the context does not become too huge.
+  */
   if(!Array.isArray(arr)) return { shown: [], omitted: 0 };
   return { shown: arr.slice(0, n), omitted: Math.max(0, arr.length - n) };
 }
 
 function isNctId(str){
-  // Checks if the input looks like an exact NCT ID.
+  /*
+    Checks if the user typed an exact ClinicalTrials.gov ID.
+
+    Example valid format:
+    NCT04280705
+  */
   return /^NCT\d{8}$/i.test(str.trim());
 }
 
-// ClinicalTrials.gov API 
+// ---------- ClinicalTrials.gov API ----------
 async function searchTrials(term){
   /*
-    Searches ClinicalTrials.gov by keyword.
+    This searches ClinicalTrials.gov by keyword.
 
+    Example:
+    User types "glioblastoma"
+    The app asks ClinicalTrials.gov for matching studies.
+
+    The API can return many pages, so this function keeps loading pages
+    until it reaches 500 trials or there are no more pages.
   */
 
   let allStudies = [];
@@ -551,6 +700,7 @@ async function searchTrials(term){
     }
 
     const data = await res.json();
+
     allStudies = allStudies.concat(data.studies || []);
     pageToken = data.nextPageToken || null;
 
@@ -562,8 +712,10 @@ async function searchTrials(term){
 
 async function fetchTrialById(nctId){
   /*
-    This loads one exact trial from ClinicalTrials.gov.
+    This loads one exact trial by NCT ID.
 
+    Example:
+    NCT04280705
   */
 
   const url = `https://clinicaltrials.gov/api/v2/studies/${encodeURIComponent(nctId.toUpperCase())}`;
@@ -576,9 +728,15 @@ async function fetchTrialById(nctId){
   return await res.json();
 }
 
-// Render keyword search results 
+// ---------- display matching trial results after keyword search ----------
 function renderResults(studies){
-  // Clears old search results.
+  /*
+    "Display" means show something on the webpage.
+
+    This function takes the trial list from ClinicalTrials.gov
+    and turns each trial into a nicer preview card.
+  */
+
   els.resultsList.innerHTML = '';
 
   if(studies.length === 0){
@@ -592,35 +750,82 @@ function renderResults(studies){
   els.resultsList.appendChild(countNote);
 
   studies.forEach(study => {
-    const id = study.protocolSection?.identificationModule || {};
-    const status = study.protocolSection?.statusModule || {};
+    const p = study.protocolSection || {};
+    const id = p.identificationModule || {};
+    const status = p.statusModule || {};
+    const design = p.designModule || {};
+    const sponsor = p.sponsorCollaboratorsModule || {};
+    const cond = p.conditionsModule || {};
+
     const title = id.briefTitle || id.officialTitle || 'Untitled trial';
     const nct = id.nctId || '—';
     const overallStatus = status.overallStatus || 'Unknown status';
+    const phase = (design.phases || []).join(', ') || 'N/A';
+    const leadSponsor = sponsor.leadSponsor?.name || 'N/A';
+    const firstCondition = (cond.conditions || [])[0] || 'N/A';
     const stopped = /TERMINATED|SUSPENDED|WITHDRAWN/i.test(overallStatus);
+
+    /*
+      In search results, ClinicalTrials.gov may tell us whether a trial has results.
+      If not, this still works and just says "Registry record."
+    */
+    const resultsPosted = study.hasResults === true || !!study.resultsSection;
 
     const card = document.createElement('div');
     card.className = 'result-card';
 
     card.innerHTML = `
-      <div>
-        <div class="rc-title">${esc(title)}</div>
-        <span class="status-pill ${stopped ? 'stopped' : ''}">${esc(overallStatus)}</span>
+      <div class="result-top">
+        <div class="result-title">${esc(title)}</div>
+        <div class="result-nct">${esc(nct)}</div>
       </div>
-      <div class="rc-meta">${esc(nct)}</div>
+
+      <div class="result-meta-grid">
+        <div class="result-meta-item">
+          <strong>Status</strong>
+          <span class="status-pill ${stopped ? 'stopped' : ''}">${esc(overallStatus)}</span>
+        </div>
+
+        <div class="result-meta-item">
+          <strong>Phase</strong>
+          ${esc(phase)}
+        </div>
+
+        <div class="result-meta-item">
+          <strong>Sponsor</strong>
+          ${esc(leadSponsor)}
+        </div>
+
+        <div class="result-meta-item">
+          <strong>Condition</strong>
+          ${esc(firstCondition)}
+        </div>
+      </div>
+
+      <div class="result-bottom">
+        <div class="results-mini">
+          ${resultsPosted ? '✓ Results may be posted' : 'Registry record'}
+        </div>
+        <div class="open-trial-text">Open trial →</div>
+      </div>
     `;
 
-    // When user clicks a result, load that exact trial.
     card.addEventListener('click', () => loadTrial(nct));
     els.resultsList.appendChild(card);
   });
 }
 
-// build AI context from ClinicalTrials.gov JSON
+// ---------- build readable notes from ClinicalTrials.gov JSON ----------
 function buildContext(study){
   /*
+    ClinicalTrials.gov gives us raw JSON.
 
-    The final output of this function is trialContext.
+    JSON is organized for computers, but not always easy for humans.
+    This function pulls out important pieces and writes readable notes.
+
+    These readable notes are called trialContext.
+
+    Claude reads trialContext when answering the user's question.
   */
 
   const p = study.protocolSection || {};
@@ -717,7 +922,12 @@ Accepts healthy volunteers: ${elig.healthyVolunteers ?? 'N/A'}`);
   out.push(`## LOCATIONS (${(contacts.locations||[]).length} total)
 ${locs.shown.join('\n') || 'N/A'}${locs.omitted ? `\n(+${locs.omitted} more not shown)` : ''}`);
 
-  // Results section exists only if ClinicalTrials.gov has posted results.
+  /*
+    Results section:
+    Some trials have posted results on ClinicalTrials.gov.
+    Some trials do not.
+  */
+
   if(r){
     hasResults = true;
 
@@ -726,9 +936,20 @@ ${locs.shown.join('\n') || 'N/A'}${locs.omitted ? `\n(+${locs.omitted} more not 
       .map(g => `- ${g.title}: ${g.description||''}`)
       .join('\n');
 
+    const periods = (flow.periods||[]).map(per => {
+      const milestones = (per.milestones||[]).map(m => {
+        const counts = (m.achievements||[]).map(a => `${a.groupId}=${a.numSubjects}`).join(', ');
+        return `  ${m.type}: ${counts}`;
+      }).join('\n');
+
+      return `Period "${per.title}":
+${milestones}`;
+    }).join('\n');
+
     out.push(`## RESULTS: PARTICIPANT FLOW
 Groups:
-${flowGroups || 'N/A'}`);
+${flowGroups || 'N/A'}
+${periods || ''}`);
 
     const baseline = r.baselineCharacteristicsModule || {};
     const baseMeasures = truncateList(baseline.measures||[], 8);
@@ -748,6 +969,7 @@ ${flowGroups || 'N/A'}`);
 ${baseText || 'N/A'}${baseMeasures.omitted ? `\n(+${baseMeasures.omitted} more baseline measures not shown)` : ''}`);
 
     const resultGroups = r.outcomeMeasuresModule?.groups || [];
+
     const resultGroupText = resultGroups
       .map(g => `- ${g.id || 'N/A'}: ${g.title || 'Untitled group'}${g.description ? ' — ' + g.description : ''}`)
       .join('\n');
@@ -760,6 +982,10 @@ ${resultGroupText || 'N/A'}`);
     }
 
     function compactJson(value, maxLen = 1600){
+      /*
+        Converts part of the raw results JSON into text.
+        If it is too long, it gets shortened.
+      */
       try{
         const json = JSON.stringify(value, null, 2);
         if(!json || json === 'null' || json === 'undefined') return '';
@@ -774,9 +1000,11 @@ ${resultGroupText || 'N/A'}`);
 
       if(v.groupId) parts.push(`group ${v.groupId}`);
       if(v.value !== undefined) parts.push(`value ${v.value}`);
-      if(v.lowerLimit !== undefined || v.upperLimit !== undefined) {
+
+      if(v.lowerLimit !== undefined || v.upperLimit !== undefined){
         parts.push(`range ${cleanVal(v.lowerLimit)} to ${cleanVal(v.upperLimit)}`);
       }
+
       if(v.spread !== undefined) parts.push(`spread ${v.spread}`);
       if(v.comment) parts.push(`comment: ${v.comment}`);
 
@@ -785,13 +1013,13 @@ ${resultGroupText || 'N/A'}`);
 
     function formatAnalysis(a){
       /*
-        This is where statistical analysis is extracted.
+        This extracts statistical analysis fields.
 
         It checks for:
-        - p-values
-        - confidence intervals
-        - statistical method
         - groups compared
+        - statistical method
+        - p-value
+        - confidence interval
         - effect estimate
       */
 
@@ -804,26 +1032,43 @@ ${resultGroupText || 'N/A'}`);
       parts.push(`Groups compared: ${groupIds}`);
       parts.push(`Method: ${cleanVal(a.statisticalMethod || a.method || a.testName)}`);
 
-      if(a.methodDescription) {
+      if(a.methodDescription){
         parts.push(`Method description: ${a.methodDescription}`);
       }
 
-      if(a.paramType || a.paramValue) {
+      if(a.paramType || a.paramValue){
         parts.push(`Effect/estimate: ${cleanVal(a.paramValue || a.estimateValue)} ${a.paramType ? '(' + a.paramType + ')' : ''}`);
       }
 
-      if(a.pValue !== undefined || a.pValueRange || a.pValueComment) {
+      if(a.dispersionType || a.dispersionValue){
+        parts.push(`Dispersion: ${cleanVal(a.dispersionValue)} ${a.dispersionType ? '(' + a.dispersionType + ')' : ''}`);
+      }
+
+      if(a.pValue !== undefined || a.pValueRange || a.pValueComment){
         parts.push(`P-value: ${cleanVal(a.pValue || a.pValueRange)}${a.pValueComment ? ' — ' + a.pValueComment : ''}`);
       }
 
-      if(a.ciPctValue || a.ciLowerLimit || a.ciUpperLimit){
-        parts.push(`Confidence interval: ${a.ciPctValue ? a.ciPctValue + '% ' : ''}${cleanVal(a.ciLowerLimit)} to ${cleanVal(a.ciUpperLimit)}`);
+      if(a.ciPctValue || a.ciLowerLimit || a.ciUpperLimit || a.ciLowerLimitComment || a.ciUpperLimitComment){
+        parts.push(`Confidence interval: ${a.ciPctValue ? a.ciPctValue + '% ' : ''}${cleanVal(a.ciLowerLimit)} to ${cleanVal(a.ciUpperLimit)}${a.ciLowerLimitComment ? ' — lower comment: ' + a.ciLowerLimitComment : ''}${a.ciUpperLimitComment ? ' — upper comment: ' + a.ciUpperLimitComment : ''}`);
+      }
+
+      if(a.nonInferiorityType){
+        parts.push(`Non-inferiority/superiority type: ${a.nonInferiorityType}`);
+      }
+
+      if(a.statisticalComment){
+        parts.push(`Statistical comment: ${a.statisticalComment}`);
+      }
+
+      if(a.estimateComment){
+        parts.push(`Estimate comment: ${a.estimateComment}`);
       }
 
       return parts.filter(Boolean).join('; ');
     }
 
     let anyStatisticalAnalysis = false;
+
     const allOutcomeMeasures = r.outcomeMeasuresModule?.outcomeMeasures || [];
     const outMeasures = truncateList(allOutcomeMeasures, 60);
 
@@ -833,6 +1078,7 @@ ${resultGroupText || 'N/A'}`);
           const vals = (c.measurements || [])
             .map(formatMeasurement)
             .join(', ');
+
           return `${c.title || 'Category'}: ${vals || 'N/A'}`;
         }).join(' | ');
 
@@ -841,7 +1087,7 @@ ${resultGroupText || 'N/A'}`);
 
       const analyses = m.analyses || [];
 
-      if(analyses.length > 0) {
+      if(analyses.length > 0){
         anyStatisticalAnalysis = true;
       }
 
@@ -849,23 +1095,27 @@ ${resultGroupText || 'N/A'}`);
         ? analyses.map((a, i) => `Analysis ${i + 1}: ${formatAnalysis(a)}`).join('\n  ')
         : 'No p-values, confidence intervals, statistical methods, or significance testing were listed for this outcome in the ClinicalTrials.gov analysis fields.';
 
+      const denominatorText = compactJson(m.denoms || m.denomsUnits || m.denominatorUnits || '', 700);
+
       return `Outcome ${index + 1}: [${m.type || 'Outcome'}] ${m.title || 'Untitled outcome'}
 Description: ${m.description || 'N/A'}
 Time frame: ${m.timeFrame || 'N/A'}
 Unit of measure: ${m.unitOfMeasure || 'N/A'}
 Population description: ${m.populationDescription || 'N/A'}
 Results: ${classes || 'N/A'}
+Denominators: ${denominatorText || 'N/A'}
 Statistical analysis: ${analysisText}`;
     }).join('\n\n');
 
     out.push(`## RESULTS: OUTCOME MEASURES AND STATISTICAL ANALYSES
 ${outText || 'N/A'}
-Overall statistical analysis availability: ${anyStatisticalAnalysis ? 'At least one outcome includes statistical analysis fields in ClinicalTrials.gov.' : 'No p-values, confidence intervals, statistical methods, or significance testing were found in the ClinicalTrials.gov outcome analysis fields included in this record.'}`);
+Overall statistical analysis availability: ${anyStatisticalAnalysis ? 'At least one outcome includes statistical analysis fields in ClinicalTrials.gov.' : 'No p-values, confidence intervals, statistical methods, or significance testing were found in the ClinicalTrials.gov outcome analysis fields included in this record.'}${outMeasures.omitted ? `\n(+${outMeasures.omitted} more outcome measures not shown because this trial has many outcomes — ask about a specific outcome name if needed)` : ''}`);
 
     const rawResultsJson = compactJson(r, 50000);
 
     out.push(`## RAW CLINICALTRIALS.GOV RESULTS JSON EXCERPT
 This excerpt helps the assistant answer less common results questions beyond the manually summarized fields.
+If something is not in this JSON excerpt, say it is not available in the provided registry data.
 ${rawResultsJson || 'N/A'}`);
 
     const ae = r.adverseEventsModule || {};
@@ -883,7 +1133,10 @@ Serious events:
 ${seriousEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${seriousEvents.omitted ? `\n(+${seriousEvents.omitted} more serious events not shown)` : ''}
 
 Other/non-serious events:
-${otherEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${otherEvents.omitted ? `\n(+${otherEvents.omitted} more not shown)` : ''}`);
+${otherEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${otherEvents.omitted ? `\n(+${otherEvents.omitted} more not shown)` : ''}
+
+All-cause mortality/deaths and group flow: ${JSON.stringify(ae.eventGroups||[]).slice(0,600)}`);
+
   } else {
     hasResults = false;
 
@@ -894,14 +1147,13 @@ No results have been posted to ClinicalTrials.gov for this trial. Only registry/
   return out.join('\n\n');
 }
 
-// ---------- render selected trial card ----------
+// ---------- display the selected trial card ----------
 function renderLedger(study){
   /*
-    This updates the left trial summary card.
+    This fills in the left-side trial summary card.
 
-    Important:
-    - The visible Literature box was removed.
-    - PubMed/open-access still loads in the background for the chatbot.
+    The visible Literature box is removed.
+    PubMed/open-access literature still loads in the background.
   */
 
   const id = study.protocolSection?.identificationModule || {};
@@ -913,12 +1165,36 @@ function renderLedger(study){
   els.ledgerCard.innerHTML = `
     <div class="nct">${esc(id.nctId||'')}</div>
     <h2>${esc(id.briefTitle||'Untitled trial')}</h2>
-    <div class="ledger-field"><span class="label">Status</span>${esc(status.overallStatus||'N/A')}</div>
-    <div class="ledger-field"><span class="label">Phase</span>${esc((design.phases||[]).join(', ')||'N/A')}</div>
-    <div class="ledger-field"><span class="label">Sponsor</span>${esc(sponsor.leadSponsor?.name||'N/A')}</div>
-    <div class="ledger-field"><span class="label">Conditions</span>${esc((cond.conditions||[]).join(', ')||'N/A')}</div>
-    <div class="ledger-field"><span class="label">Enrollment</span>${esc(design.enrollmentInfo?.count||'N/A')}</div>
-    <div class="results-flag ${hasResults ? 'has-results' : 'no-results'}">${hasResults ? '✓ Results posted' : '✕ No results posted yet'}</div>
+
+    <div class="ledger-field">
+      <span class="label">Status</span>
+      ${esc(status.overallStatus||'N/A')}
+    </div>
+
+    <div class="ledger-field">
+      <span class="label">Phase</span>
+      ${esc((design.phases||[]).join(', ')||'N/A')}
+    </div>
+
+    <div class="ledger-field">
+      <span class="label">Sponsor</span>
+      ${esc(sponsor.leadSponsor?.name||'N/A')}
+    </div>
+
+    <div class="ledger-field">
+      <span class="label">Conditions</span>
+      ${esc((cond.conditions||[]).join(', ')||'N/A')}
+    </div>
+
+    <div class="ledger-field">
+      <span class="label">Enrollment</span>
+      ${esc(design.enrollmentInfo?.count||'N/A')}
+    </div>
+
+    <div class="results-flag ${hasResults ? 'has-results' : 'no-results'}">
+      ${hasResults ? '✓ Results posted' : '✕ No results posted yet'}
+    </div>
+
     <span class="change-trial" id="changeTrialBtn">← Search a different trial</span>
   `;
 
@@ -926,6 +1202,10 @@ function renderLedger(study){
 }
 
 function renderSuggestions(){
+  /*
+    These are the clickable suggested questions shown before the user chats.
+  */
+
   const base = [
     'Summarize the study design in plain terms',
     'What are the key inclusion/exclusion criteria?',
@@ -951,7 +1231,11 @@ function renderSuggestions(){
 }
 
 function getTrialIdentifiers(study){
-  // Pulls identifiers that the backend uses to search PubMed/open-access sources.
+  /*
+    Gets the NCT ID and titles.
+    The backend uses these to search PubMed/open-access literature.
+  */
+
   const id = study.protocolSection?.identificationModule || {};
 
   return {
@@ -963,21 +1247,24 @@ function getTrialIdentifiers(study){
 
 function renderLiteratureStatus(html){
   /*
-    We removed the visible Literature box.
-    So literatureStatus usually does not exist anymore.
-    This function safely does nothing if the element is missing.
+    There is no visible Literature box now.
+
+    So this function safely does nothing unless an element called
+    literatureStatus exists.
   */
 
   const el = document.getElementById('literatureStatus');
 
-  if(el) {
+  if(el){
     el.innerHTML = html;
   }
 }
 
 function renderLiteratureArticles(articles){
-  // This still exists because background literature retrieval can still happen.
-  // It just won't show anything visually if literatureStatus does not exist.
+  /*
+    This function is kept because literature can still load in the background.
+    Since the visible Literature box is removed, the user usually won't see this.
+  */
 
   if(!articles || articles.length === 0){
     renderLiteratureStatus('No PubMed or open-access article matches were found automatically. The chatbot will use the ClinicalTrials.gov record only.');
@@ -998,15 +1285,14 @@ function renderLiteratureArticles(articles){
 
 async function loadRelatedLiterature(study){
   /*
-    This searches PubMed/open-access through the BACKEND route /api/literature.
+    This calls the backend route /api/literature.
 
-    Why backend?
-    - PubMed/open-access retrieval is more complex.
-    - Backend can handle APIs more safely.
-    - The frontend just asks /api/literature for the literature context.
+    This happens in the background.
 
-    This runs in the background after a trial loads.
-    It does NOT show articles on the left card anymore.
+    It can add PubMed abstracts or legal open-access full text
+    into literatureContext.
+
+    Claude can then use that extra evidence if available.
   */
 
   literatureContext = '';
@@ -1031,15 +1317,21 @@ async function loadRelatedLiterature(study){
 
     literatureContext = data.context || '';
     literatureArticles = data.articles || [];
+
     renderLiteratureArticles(literatureArticles);
   } catch(err){
     literatureContext = '';
     literatureArticles = [];
+
     renderLiteratureStatus(`Literature search failed: ${esc(err.message)}. The chatbot will still use the ClinicalTrials.gov record.`);
   }
 }
 
 function resetToSearch(){
+  /*
+    Resets the app back to the search screen.
+  */
+
   currentTrial = null;
   trialContext = '';
   literatureContext = '';
@@ -1057,11 +1349,15 @@ function resetToSearch(){
 // ---------- load one trial ----------
 async function loadTrial(nctId){
   /*
-    Full trial-loading flow:
-    1) Fetch the trial JSON by NCT ID.
-    2) Build trialContext for Claude.
-    3) Show the trial card + chat UI.
-    4) Start PubMed/open-access search in the background.
+    This runs when the user clicks a search result
+    or enters an exact NCT ID.
+
+    Steps:
+    1) Fetch full trial JSON.
+    2) Convert JSON into trialContext notes.
+    3) Show the trial summary card.
+    4) Show the chat interface.
+    5) Start literature search in the background.
   */
 
   els.searchError.innerHTML = '';
@@ -1078,14 +1374,16 @@ async function loadTrial(nctId){
 
     document.getElementById('searchBlock').style.display = 'none';
     els.mainLayout.style.display = 'grid';
+
     els.chatScroll.innerHTML = '';
     els.emptyState.style.display = 'flex';
     els.chatScroll.appendChild(els.emptyState);
 
     renderSuggestions();
 
-    // Background literature search. It helps the chatbot but does not show on left card.
+    // Runs in background. Not shown on the left card.
     loadRelatedLiterature(study);
+
   } catch(err){
     els.resultsList.innerHTML = '';
     els.searchError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
@@ -1095,13 +1393,13 @@ async function loadTrial(nctId){
 // ---------- search flow ----------
 async function handleSearch(){
   /*
-    Runs when user clicks Search or presses Enter.
+    This runs when the user clicks Search or presses Enter.
 
-    If exact NCT ID:
-    - Load the trial directly.
+    If the input is an exact NCT ID:
+    - load that trial directly.
 
-    If keyword:
-    - Search ClinicalTrials.gov and show matching trials.
+    If it is a keyword:
+    - search ClinicalTrials.gov and show matching trial cards.
   */
 
   const term = els.searchInput.value.trim();
@@ -1128,7 +1426,7 @@ async function handleSearch(){
 els.searchBtn.addEventListener('click', handleSearch);
 
 els.searchInput.addEventListener('keydown', e => {
-  if(e.key === 'Enter') {
+  if(e.key === 'Enter'){
     handleSearch();
   }
 });
@@ -1136,14 +1434,14 @@ els.searchInput.addEventListener('keydown', e => {
 // ---------- chat flow ----------
 function appendMessage(role, text, sources){
   /*
-    Adds a chat bubble to the screen.
+    Adds a message bubble to the chat.
 
-    role = "user" or "assistant"
-    text = message content
-    sources = optional source chips under the answer
+    role:
+    - "user"
+    - "assistant"
   */
 
-  if(els.emptyState.parentNode) {
+  if(els.emptyState.parentNode){
     els.emptyState.remove();
   }
 
@@ -1178,17 +1476,15 @@ function appendMessage(role, text, sources){
 
 function parseSources(text){
   /*
-    Claude is instructed to end with:
+    Claude is told to end with:
     Sources: X, Y
 
-    This function separates:
-    - main answer text
-    - source labels
+    This function separates the actual answer from the source labels.
   */
 
   const match = text.match(/Sources?:\s*(.+)\s*$/i);
 
-  if(!match) {
+  if(!match){
     return {
       body: text.trim(),
       sources: []
@@ -1207,12 +1503,13 @@ function parseSources(text){
 
 async function sendMessage(){
   /*
-    Runs when the user asks a question.
+    This runs when the user asks the chatbot a question.
 
-    The important thing:
-    The frontend does NOT call Claude directly.
+    Very important:
+    The frontend does not call Claude directly.
     It sends the request to /api/chat.
-    The backend then calls Claude using your private API key.
+
+    Then server.js calls Claude securely using the API key.
   */
 
   const text = els.chatInput.value.trim();
@@ -1288,6 +1585,7 @@ ${literatureContext || 'No PubMed abstract or legal open-access full-text conten
       role: 'assistant',
       content: fullText
     });
+
   } catch(err){
     typingWrap.remove();
     appendMessage('assistant', `Something went wrong reaching the model: ${err.message}`);
