@@ -1,4 +1,13 @@
 <!DOCTYPE html>
+<!--
+  Clinical Trial Evidence Assistant: 
+  - FRONTEND file -> controls what the user sees in the browser.
+  - The backend is server.js -> "talks" to Claude and PubMed.
+  - This HTML file -> 
+      1) Searches ClinicalTrials.gov for trials.
+      2) Builds clean trialContext from the raw ClinicalTrials.gov JSON.
+      3) Sends the user's chat question + trialContext to the backend
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -6,7 +15,13 @@
 <title>Clinical Trial Evidence Assistant</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
 <style>
+  /*
+    CSS -> 
+    Controls the look of the page 
+  */
+
   :root{
     --paper: #EEF1EC;
     --paper-raised: #F8F9F6;
@@ -19,19 +34,23 @@
     --rust-soft: #F1E1DB;
     --teal-soft: #DCEBEA;
   }
+
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
+
   body{
     background:var(--paper);
     color:var(--ink);
     font-family:'IBM Plex Sans', sans-serif;
     min-height:100vh;
   }
+
   .app{
     max-width:1100px;
     margin:0 auto;
     padding:28px 20px 60px;
   }
+
   header.masthead{
     display:flex;
     align-items:baseline;
@@ -42,6 +61,7 @@
     flex-wrap:wrap;
     gap:8px;
   }
+
   header.masthead h1{
     font-family:'IBM Plex Sans', sans-serif;
     font-size:28px;
@@ -49,6 +69,7 @@
     margin:0;
     letter-spacing:0;
   }
+
   header.masthead .kicker{
     font-family:'IBM Plex Mono', monospace;
     font-size:11px;
@@ -56,6 +77,7 @@
     text-transform:uppercase;
     color:var(--ink-soft);
   }
+
   .search-block{
     background:var(--paper-raised);
     border:1px solid var(--rule);
@@ -63,11 +85,13 @@
     padding:18px;
     margin-bottom:20px;
   }
+
   .search-row{
     display:flex;
     gap:10px;
     flex-wrap:wrap;
   }
+
   .search-row input{
     flex:1;
     min-width:220px;
@@ -79,10 +103,12 @@
     background:#fff;
     color:var(--ink);
   }
+
   .search-row input:focus{
     outline:2px solid var(--teal);
     outline-offset:1px;
   }
+
   button{
     font-family:'IBM Plex Sans', sans-serif;
     font-weight:500;
@@ -95,26 +121,24 @@
     cursor:pointer;
     transition:background .12s ease;
   }
+
   button:hover{background:var(--teal-deep);}
   button:disabled{background:#9AAEAA;border-color:#9AAEAA;cursor:not-allowed;}
-  button.ghost{
-    background:transparent;
-    color:var(--teal-deep);
-    border:1px solid var(--rule);
-  }
-  button.ghost:hover{background:var(--teal-soft);}
+
   .hint{
     font-size:12px;
     color:var(--ink-soft);
     margin-top:8px;
     font-family:'IBM Plex Mono', monospace;
   }
+
   .results-list{
     margin-top:14px;
     display:flex;
     flex-direction:column;
     gap:8px;
   }
+
   .result-card{
     border:1px solid var(--rule);
     background:#fff;
@@ -126,14 +150,17 @@
     align-items:center;
     gap:12px;
   }
+
   .result-card:hover{border-color:var(--teal);}
   .result-card .rc-title{font-size:14px; font-weight:500;}
+
   .result-card .rc-meta{
     font-family:'IBM Plex Mono', monospace;
     font-size:11px;
     color:var(--ink-soft);
     white-space:nowrap;
   }
+
   .status-pill{
     display:inline-block;
     padding:2px 8px;
@@ -146,13 +173,18 @@
     color:var(--teal-deep);
     margin-left:8px;
   }
-  .status-pill.stopped{background:var(--rust-soft); color:var(--rust);}
+
+  .status-pill.stopped{
+    background:var(--rust-soft);
+    color:var(--rust);
+  }
 
   .layout{
     display:grid;
     grid-template-columns:300px 1fr;
     gap:20px;
   }
+
   @media(max-width:820px){
     .layout{grid-template-columns:1fr;}
   }
@@ -164,6 +196,7 @@
     position:relative;
     padding:18px 16px 16px;
   }
+
   .ledger-card:before{
     content:"";
     position:absolute;
@@ -173,23 +206,27 @@
     opacity:0.15;
     border-radius:4px 4px 0 0;
   }
+
   .ledger-card .nct{
     font-family:'IBM Plex Mono', monospace;
     font-size:11px;
     color:var(--teal-deep);
     letter-spacing:0.06em;
   }
+
   .ledger-card h2{
     font-family:'Source Serif 4', serif;
     font-size:17px;
     line-height:1.3;
     margin:6px 0 10px;
   }
+
   .ledger-field{
     font-size:12.5px;
     margin-bottom:7px;
     line-height:1.4;
   }
+
   .ledger-field .label{
     display:block;
     font-family:'IBM Plex Mono', monospace;
@@ -199,6 +236,7 @@
     color:var(--ink-soft);
     margin-bottom:1px;
   }
+
   .change-trial{
     display:block;
     margin-top:14px;
@@ -207,6 +245,7 @@
     cursor:pointer;
     text-decoration:underline;
   }
+
   .results-flag{
     margin-top:12px;
     padding:8px 10px;
@@ -214,43 +253,16 @@
     font-size:11.5px;
     font-family:'IBM Plex Mono', monospace;
   }
-  .results-flag.has-results{background:var(--teal-soft); color:var(--teal-deep);}
-  .results-flag.no-results{background:var(--rust-soft); color:var(--rust);}
 
-  .literature-box{
-    margin-top:12px;
-    padding:10px;
-    border:1px solid var(--rule);
-    border-radius:3px;
-    background:#fff;
-    font-size:12px;
-    line-height:1.45;
-  }
-  .literature-box .label{
-    display:block;
-    font-family:'IBM Plex Mono', monospace;
-    font-size:10px;
-    text-transform:uppercase;
-    letter-spacing:.06em;
-    color:var(--ink-soft);
-    margin-bottom:4px;
-  }
-  .literature-item{
-    margin-top:6px;
-    padding-top:6px;
-    border-top:1px solid var(--rule);
-  }
-  .literature-item:first-child{
-    border-top:none;
-    padding-top:0;
-  }
-  .literature-meta{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:10.5px;
-    color:var(--ink-soft);
-    margin-top:2px;
+  .results-flag.has-results{
+    background:var(--teal-soft);
+    color:var(--teal-deep);
   }
 
+  .results-flag.no-results{
+    background:var(--rust-soft);
+    color:var(--rust);
+  }
 
   .chat-panel{
     background:#fff;
@@ -260,6 +272,7 @@
     flex-direction:column;
     min-height:520px;
   }
+
   .chat-scroll{
     flex:1;
     overflow-y:auto;
@@ -269,9 +282,11 @@
     gap:16px;
     max-height:640px;
   }
+
   .msg{max-width:88%;}
   .msg.user{align-self:flex-end;}
   .msg.assistant{align-self:flex-start;}
+
   .msg .bubble{
     padding:12px 14px;
     border-radius:5px;
@@ -279,22 +294,26 @@
     line-height:1.55;
     white-space:pre-wrap;
   }
+
   .msg.user .bubble{
     background:var(--teal);
     color:#fff;
     border-radius:5px 5px 2px 5px;
   }
+
   .msg.assistant .bubble{
     background:var(--paper);
     border:1px solid var(--rule);
     border-radius:5px 5px 5px 2px;
   }
+
   .sources-line{
     margin-top:8px;
     display:flex;
     flex-wrap:wrap;
     gap:6px;
   }
+
   .source-chip{
     font-family:'IBM Plex Mono', monospace;
     font-size:10.5px;
@@ -304,70 +323,69 @@
     padding:3px 8px;
     border-radius:2px;
   }
+
   .empty-state{
-  margin:auto;
-  text-align:center;
-  color:var(--ink-soft);
-  font-size:15px;
-  line-height:1.55;
-  max-width:680px;
-  width:100%;
-  padding:32px 24px;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:12px;
-}
-
-.empty-state .big{
-  font-family:'Source Serif 4', serif;
-  font-size:26px;
-  line-height:1.2;
-  color:var(--ink);
-  margin:0;
-}
-
-.empty-state .copy{
-  max-width:520px;
-}
-
-.suggestions{
-  display:grid;
-  grid-template-columns:repeat(2, minmax(220px, 1fr));
-  gap:10px;
-  width:100%;
-  max-width:560px;
-  margin-top:8px;
-}
-
-.suggestion-chip{
-  font-size:13.5px;
-  line-height:1.35;
-  border:1px solid var(--rule);
-  background:var(--paper-raised);
-  padding:10px 12px;
-  border-radius:18px;
-  cursor:pointer;
-  text-align:center;
-}
-
-.suggestion-chip:hover{
-  border-color:var(--teal);
-  background:var(--teal-soft);
-}
-
-@media(max-width:640px){
-  .suggestions{
-    grid-template-columns:1fr;
+    margin:auto;
+    text-align:center;
+    color:var(--ink-soft);
+    font-size:15px;
+    line-height:1.55;
+    max-width:680px;
+    width:100%;
+    padding:32px 24px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
   }
-}
+
+  .empty-state .big{
+    font-family:'Source Serif 4', serif;
+    font-size:26px;
+    line-height:1.2;
+    color:var(--ink);
+    margin:0;
+  }
+
+  .suggestions{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(220px, 1fr));
+    gap:10px;
+    width:100%;
+    max-width:560px;
+    margin-top:8px;
+  }
+
+  .suggestion-chip{
+    font-size:13.5px;
+    line-height:1.35;
+    border:1px solid var(--rule);
+    background:var(--paper-raised);
+    padding:10px 12px;
+    border-radius:18px;
+    cursor:pointer;
+    text-align:center;
+  }
+
+  .suggestion-chip:hover{
+    border-color:var(--teal);
+    background:var(--teal-soft);
+  }
+
+  @media(max-width:640px){
+    .suggestions{
+      grid-template-columns:1fr;
+    }
+  }
+
   .chat-input-row{
     border-top:1px solid var(--rule);
     padding:12px;
     display:flex;
     gap:8px;
   }
+
   .chat-input-row textarea{
     flex:1;
     resize:none;
@@ -379,12 +397,18 @@
     min-height:44px;
     max-height:120px;
   }
-  .chat-input-row textarea:focus{outline:2px solid var(--teal); outline-offset:1px;}
+
+  .chat-input-row textarea:focus{
+    outline:2px solid var(--teal);
+    outline-offset:1px;
+  }
+
   .typing{
     font-family:'IBM Plex Mono', monospace;
     font-size:12px;
     color:var(--ink-soft);
   }
+
   .error-box{
     background:var(--rust-soft);
     color:var(--rust);
@@ -394,6 +418,7 @@
     font-size:13px;
     margin-top:10px;
   }
+
   .spinner{
     display:inline-block;
     width:12px;height:12px;
@@ -404,9 +429,13 @@
     vertical-align:middle;
     margin-right:6px;
   }
-  @keyframes spin{to{transform:rotate(360deg);}}
+
+  @keyframes spin{
+    to{transform:rotate(360deg);}
+  }
 </style>
 </head>
+
 <body>
 <div class="app">
   <header class="masthead">
@@ -433,7 +462,6 @@
       <div class="chat-scroll" id="chatScroll">
         <div class="empty-state" id="emptyState">
           <div class="big">Ask this trial anything</div>
-          <div class="copy">Questions are answered strictly from this trial's registry record: eligibility, design, outcomes, and results (when posted).</div>
           <div class="suggestions" id="suggestionChips"></div>
         </div>
       </div>
@@ -446,6 +474,19 @@
 </div>
 
 <script>
+/*
+  JAVASCRIPT SECTION
+  ------------------------------------------------------------
+  This is the actual app logic.
+
+  Main idea:
+  1) Search ClinicalTrials.gov.
+  2) Load a selected trial.
+  3) Convert the raw JSON into readable text called trialContext.
+  4) Send trialContext + the user's question to /api/chat.
+  5) Backend calls Claude safely with the API key hidden.
+*/
+
 const els = {
   searchInput: document.getElementById('searchInput'),
   searchBtn: document.getElementById('searchBtn'),
@@ -460,31 +501,42 @@ const els = {
   sendBtn: document.getElementById('sendBtn'),
 };
 
-let currentTrial = null;      // raw study JSON
-let trialContext = "";        // condensed registry text fed to the model
-let literatureContext = "";   // PubMed abstracts + open-access full text snippets
-let literatureArticles = [];   // metadata shown in the UI
-let chatHistory = [];         // [{role, content}]
+let currentTrial = null;
+let trialContext = "";
+let literatureContext = "";
+let literatureArticles = [];
+let chatHistory = [];
 let hasResults = false;
 
-// ---------- helpers ----------
+// ---------- helper functions ----------
 function esc(str){
+  // Makes text safe before putting it into the page.
   const d = document.createElement('div');
   d.textContent = str ?? '';
   return d.innerHTML;
 }
 
 function truncateList(arr, n){
+  // Shows only the first n items from long lists.
   if(!Array.isArray(arr)) return { shown: [], omitted: 0 };
   return { shown: arr.slice(0, n), omitted: Math.max(0, arr.length - n) };
 }
 
 function isNctId(str){
+  // Checks if the input looks like an exact NCT ID.
   return /^NCT\d{8}$/i.test(str.trim());
 }
 
 // ---------- ClinicalTrials.gov API ----------
 async function searchTrials(term){
+  /*
+    This searches ClinicalTrials.gov by keyword.
+
+    Example:
+    User types "glioblastoma"
+    The API returns many matching trials.
+  */
+
   let allStudies = [];
   let pageToken = null;
   const pageSize = 100;
@@ -492,19 +544,21 @@ async function searchTrials(term){
 
   do {
     let url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(term)}&pageSize=${pageSize}`;
+
     if(pageToken){
       url += `&pageToken=${encodeURIComponent(pageToken)}`;
     }
 
     const res = await fetch(url);
-    if(!res.ok) throw new Error(`ClinicalTrials.gov search failed (${res.status})`);
+
+    if(!res.ok){
+      throw new Error(`ClinicalTrials.gov search failed (${res.status})`);
+    }
 
     const data = await res.json();
     allStudies = allStudies.concat(data.studies || []);
     pageToken = data.nextPageToken || null;
 
-    // Safety cap: large keywords can return thousands of trials.
-    // This keeps the browser usable while still showing far more than 10.
     if(allStudies.length >= maxStudies) break;
   } while(pageToken);
 
@@ -512,15 +566,29 @@ async function searchTrials(term){
 }
 
 async function fetchTrialById(nctId){
+  /*
+    This loads one exact trial from ClinicalTrials.gov.
+
+    Example:
+    User types NCT04280705
+    This fetches the full record for that trial.
+  */
+
   const url = `https://clinicaltrials.gov/api/v2/studies/${encodeURIComponent(nctId.toUpperCase())}`;
   const res = await fetch(url);
-  if(!res.ok) throw new Error(`Could not find trial ${nctId} (${res.status})`);
+
+  if(!res.ok){
+    throw new Error(`Could not find trial ${nctId} (${res.status})`);
+  }
+
   return await res.json();
 }
 
-// ---------- rendering search results ----------
+// ---------- render keyword search results ----------
 function renderResults(studies){
+  // Clears old search results.
   els.resultsList.innerHTML = '';
+
   if(studies.length === 0){
     els.resultsList.innerHTML = '<div class="hint">No trials matched that search. Try a broader term or a direct NCT number.</div>';
     return;
@@ -532,15 +600,16 @@ function renderResults(studies){
   els.resultsList.appendChild(countNote);
 
   studies.forEach(study => {
-    const id = study.protocolSection?.identificationModule;
-    const status = study.protocolSection?.statusModule;
-    const title = id?.briefTitle || id?.officialTitle || 'Untitled trial';
-    const nct = id?.nctId || '—';
-    const overallStatus = status?.overallStatus || 'Unknown status';
+    const id = study.protocolSection?.identificationModule || {};
+    const status = study.protocolSection?.statusModule || {};
+    const title = id.briefTitle || id.officialTitle || 'Untitled trial';
+    const nct = id.nctId || '—';
+    const overallStatus = status.overallStatus || 'Unknown status';
     const stopped = /TERMINATED|SUSPENDED|WITHDRAWN/i.test(overallStatus);
 
     const card = document.createElement('div');
     card.className = 'result-card';
+
     card.innerHTML = `
       <div>
         <div class="rc-title">${esc(title)}</div>
@@ -548,15 +617,28 @@ function renderResults(studies){
       </div>
       <div class="rc-meta">${esc(nct)}</div>
     `;
+
+    // When user clicks a result, load that exact trial.
     card.addEventListener('click', () => loadTrial(nct));
     els.resultsList.appendChild(card);
   });
 }
 
-// ---------- building the condensed context for the model ----------
+// ---------- build AI context from ClinicalTrials.gov JSON ----------
 function buildContext(study){
+  /*
+    This is the most important function for evidence accuracy.
+
+    ClinicalTrials.gov gives us a big JSON object.
+    Claude cannot automatically see all of that unless we send it.
+    So this function extracts key fields and turns them into readable text.
+
+    The final output of this function is trialContext.
+  */
+
   const p = study.protocolSection || {};
   const r = study.resultsSection || null;
+
   const id = p.identificationModule || {};
   const status = p.statusModule || {};
   const sponsor = p.sponsorCollaboratorsModule || {};
@@ -570,59 +652,121 @@ function buildContext(study){
 
   let out = [];
 
-  out.push(`## IDENTIFICATION\nNCT ID: ${id.nctId || 'N/A'}\nBrief title: ${id.briefTitle || 'N/A'}\nOfficial title: ${id.officialTitle || 'N/A'}\nOrg study ID: ${id.orgStudyIdInfo?.id || 'N/A'}`);
+  out.push(`## IDENTIFICATION
+NCT ID: ${id.nctId || 'N/A'}
+Brief title: ${id.briefTitle || 'N/A'}
+Official title: ${id.officialTitle || 'N/A'}
+Org study ID: ${id.orgStudyIdInfo?.id || 'N/A'}`);
 
-  out.push(`## STATUS\nOverall status: ${status.overallStatus || 'N/A'}\nStart date: ${status.startDateStruct?.date || 'N/A'}\nPrimary completion date: ${status.primaryCompletionDateStruct?.date || 'N/A'}\nCompletion date: ${status.completionDateStruct?.date || 'N/A'}\nWhy stopped: ${status.whyStopped || 'N/A'}`);
+  out.push(`## STATUS
+Overall status: ${status.overallStatus || 'N/A'}
+Start date: ${status.startDateStruct?.date || 'N/A'}
+Primary completion date: ${status.primaryCompletionDateStruct?.date || 'N/A'}
+Completion date: ${status.completionDateStruct?.date || 'N/A'}
+Why stopped: ${status.whyStopped || 'N/A'}`);
 
-  out.push(`## SPONSOR\nLead sponsor: ${sponsor.leadSponsor?.name || 'N/A'}\nCollaborators: ${(sponsor.collaborators||[]).map(c=>c.name).join(', ') || 'None listed'}`);
+  out.push(`## SPONSOR
+Lead sponsor: ${sponsor.leadSponsor?.name || 'N/A'}
+Collaborators: ${(sponsor.collaborators||[]).map(c=>c.name).join(', ') || 'None listed'}`);
 
-  out.push(`## DESCRIPTION\nBrief summary: ${desc.briefSummary || 'N/A'}\nDetailed description: ${desc.detailedDescription || 'N/A'}`);
+  out.push(`## DESCRIPTION
+Brief summary: ${desc.briefSummary || 'N/A'}
+Detailed description: ${desc.detailedDescription || 'N/A'}`);
 
-  out.push(`## CONDITIONS\nConditions: ${(cond.conditions||[]).join(', ') || 'N/A'}\nKeywords: ${(cond.keywords||[]).join(', ') || 'N/A'}`);
+  out.push(`## CONDITIONS
+Conditions: ${(cond.conditions||[]).join(', ') || 'N/A'}
+Keywords: ${(cond.keywords||[]).join(', ') || 'N/A'}`);
 
-  out.push(`## DESIGN\nStudy type: ${design.studyType || 'N/A'}\nPhases: ${(design.phases||[]).join(', ') || 'N/A'}\nAllocation: ${design.designInfo?.allocation || 'N/A'}\nIntervention model: ${design.designInfo?.interventionModel || 'N/A'}\nPrimary purpose: ${design.designInfo?.primaryPurpose || 'N/A'}\nMasking: ${design.designInfo?.maskingInfo?.masking || 'N/A'}\nEnrollment: ${design.enrollmentInfo?.count || 'N/A'} (${design.enrollmentInfo?.type || 'N/A'})`);
+  out.push(`## DESIGN
+Study type: ${design.studyType || 'N/A'}
+Phases: ${(design.phases||[]).join(', ') || 'N/A'}
+Allocation: ${design.designInfo?.allocation || 'N/A'}
+Intervention model: ${design.designInfo?.interventionModel || 'N/A'}
+Primary purpose: ${design.designInfo?.primaryPurpose || 'N/A'}
+Masking: ${design.designInfo?.maskingInfo?.masking || 'N/A'}
+Enrollment: ${design.enrollmentInfo?.count || 'N/A'} (${design.enrollmentInfo?.type || 'N/A'})`);
 
-  const armGroups = (arms.armGroups||[]).map(a => `- ${a.label} [${a.type||'N/A'}]: ${a.description||'no description'}`).join('\n');
-  const interventions = (arms.interventions||[]).map(iv => `- ${iv.type||''} — ${iv.name||''}: ${iv.description||'no description'}`).join('\n');
-  out.push(`## ARMS\n${armGroups || 'N/A'}\n## INTERVENTIONS\n${interventions || 'N/A'}`);
+  const armGroups = (arms.armGroups||[])
+    .map(a => `- ${a.label} [${a.type||'N/A'}]: ${a.description||'no description'}`)
+    .join('\n');
 
-  const primaryOut = (outcomes.primaryOutcomes||[]).map(o => `- ${o.measure} — ${o.description||''} (time frame: ${o.timeFrame||'N/A'})`).join('\n');
-  const secondaryOut = (outcomes.secondaryOutcomes||[]).map(o => `- ${o.measure} — ${o.description||''} (time frame: ${o.timeFrame||'N/A'})`).join('\n');
-  out.push(`## PLANNED OUTCOME MEASURES\nPrimary:\n${primaryOut || 'N/A'}\nSecondary:\n${secondaryOut || 'N/A'}`);
+  const interventions = (arms.interventions||[])
+    .map(iv => `- ${iv.type||''} — ${iv.name||''}: ${iv.description||'no description'}`)
+    .join('\n');
 
-  out.push(`## ELIGIBILITY\nCriteria text: ${elig.eligibilityCriteria || 'N/A'}\nSex: ${elig.sex || 'N/A'}\nMinimum age: ${elig.minimumAge || 'N/A'}\nMaximum age: ${elig.maximumAge || 'N/A'}\nAccepts healthy volunteers: ${elig.healthyVolunteers ?? 'N/A'}`);
+  out.push(`## ARMS
+${armGroups || 'N/A'}
 
-  const locs = truncateList((contacts.locations||[]).map(l => `${l.facility||''}, ${l.city||''}, ${l.country||''}`), 15);
-  out.push(`## LOCATIONS (${(contacts.locations||[]).length} total)\n${locs.shown.join('\n') || 'N/A'}${locs.omitted ? `\n(+${locs.omitted} more not shown)` : ''}`);
+## INTERVENTIONS
+${interventions || 'N/A'}`);
 
-  // ---- Results section (only present if the trial has posted results) ----
+  const primaryOut = (outcomes.primaryOutcomes||[])
+    .map(o => `- ${o.measure} — ${o.description||''} (time frame: ${o.timeFrame||'N/A'})`)
+    .join('\n');
+
+  const secondaryOut = (outcomes.secondaryOutcomes||[])
+    .map(o => `- ${o.measure} — ${o.description||''} (time frame: ${o.timeFrame||'N/A'})`)
+    .join('\n');
+
+  out.push(`## PLANNED OUTCOME MEASURES
+Primary:
+${primaryOut || 'N/A'}
+
+Secondary:
+${secondaryOut || 'N/A'}`);
+
+  out.push(`## ELIGIBILITY
+Criteria text: ${elig.eligibilityCriteria || 'N/A'}
+Sex: ${elig.sex || 'N/A'}
+Minimum age: ${elig.minimumAge || 'N/A'}
+Maximum age: ${elig.maximumAge || 'N/A'}
+Accepts healthy volunteers: ${elig.healthyVolunteers ?? 'N/A'}`);
+
+  const locs = truncateList(
+    (contacts.locations||[]).map(l => `${l.facility||''}, ${l.city||''}, ${l.country||''}`),
+    15
+  );
+
+  out.push(`## LOCATIONS (${(contacts.locations||[]).length} total)
+${locs.shown.join('\n') || 'N/A'}${locs.omitted ? `\n(+${locs.omitted} more not shown)` : ''}`);
+
+  // Results section exists only if ClinicalTrials.gov has posted results.
   if(r){
     hasResults = true;
+
     const flow = r.participantFlowModule || {};
-    const flowGroups = (flow.groups||[]).map(g => `- ${g.title}: ${g.description||''}`).join('\n');
-    const periods = (flow.periods||[]).map(per => {
-      const milestones = (per.milestones||[]).map(m => {
-        const counts = (m.achievements||[]).map(a => `${a.groupId}=${a.numSubjects}`).join(', ');
-        return `  ${m.type}: ${counts}`;
-      }).join('\n');
-      return `Period "${per.title}":\n${milestones}`;
-    }).join('\n');
-    out.push(`## RESULTS: PARTICIPANT FLOW\nGroups:\n${flowGroups || 'N/A'}\n${periods || ''}`);
+    const flowGroups = (flow.groups||[])
+      .map(g => `- ${g.title}: ${g.description||''}`)
+      .join('\n');
+
+    out.push(`## RESULTS: PARTICIPANT FLOW
+Groups:
+${flowGroups || 'N/A'}`);
 
     const baseline = r.baselineCharacteristicsModule || {};
     const baseMeasures = truncateList(baseline.measures||[], 8);
+
     const baseText = baseMeasures.shown.map(m => {
       const cats = (m.classes?.[0]?.categories||[]).map(c => {
-        const vals = (c.measurements||[]).map(v => `${v.groupId}=${v.value}`).join(', ');
+        const vals = (c.measurements||[])
+          .map(v => `${v.groupId}=${v.value}`)
+          .join(', ');
         return `${c.title||''}: ${vals}`;
       }).join(' | ');
+
       return `- ${m.title} (${m.unitOfMeasure||''}): ${cats}`;
     }).join('\n');
-    out.push(`## RESULTS: BASELINE CHARACTERISTICS\n${baseText || 'N/A'}${baseMeasures.omitted ? `\n(+${baseMeasures.omitted} more baseline measures not shown)` : ''}`);
+
+    out.push(`## RESULTS: BASELINE CHARACTERISTICS
+${baseText || 'N/A'}${baseMeasures.omitted ? `\n(+${baseMeasures.omitted} more baseline measures not shown)` : ''}`);
 
     const resultGroups = r.outcomeMeasuresModule?.groups || [];
-    const resultGroupText = resultGroups.map(g => `- ${g.id || 'N/A'}: ${g.title || 'Untitled group'}${g.description ? ' — ' + g.description : ''}`).join('\n');
-    out.push(`## RESULTS: OUTCOME GROUPS\n${resultGroupText || 'N/A'}`);
+    const resultGroupText = resultGroups
+      .map(g => `- ${g.id || 'N/A'}: ${g.title || 'Untitled group'}${g.description ? ' — ' + g.description : ''}`)
+      .join('\n');
+
+    out.push(`## RESULTS: OUTCOME GROUPS
+${resultGroupText || 'N/A'}`);
 
     function cleanVal(v){
       return v === undefined || v === null || v === '' ? 'N/A' : v;
@@ -640,39 +784,54 @@ function buildContext(study){
 
     function formatMeasurement(v){
       const parts = [];
+
       if(v.groupId) parts.push(`group ${v.groupId}`);
       if(v.value !== undefined) parts.push(`value ${v.value}`);
-      if(v.lowerLimit !== undefined || v.upperLimit !== undefined) parts.push(`range ${cleanVal(v.lowerLimit)} to ${cleanVal(v.upperLimit)}`);
+      if(v.lowerLimit !== undefined || v.upperLimit !== undefined) {
+        parts.push(`range ${cleanVal(v.lowerLimit)} to ${cleanVal(v.upperLimit)}`);
+      }
       if(v.spread !== undefined) parts.push(`spread ${v.spread}`);
       if(v.comment) parts.push(`comment: ${v.comment}`);
+
       return parts.join('; ') || compactJson(v, 300);
     }
 
     function formatAnalysis(a){
-      const groupIds = Array.isArray(a.groupIds) ? a.groupIds.join(', ') : cleanVal(a.groupId);
+      /*
+        This is where statistical analysis is extracted.
+
+        It checks for:
+        - p-values
+        - confidence intervals
+        - statistical method
+        - groups compared
+        - effect estimate
+      */
+
+      const groupIds = Array.isArray(a.groupIds)
+        ? a.groupIds.join(', ')
+        : cleanVal(a.groupId);
+
       const parts = [];
 
       parts.push(`Groups compared: ${groupIds}`);
       parts.push(`Method: ${cleanVal(a.statisticalMethod || a.method || a.testName)}`);
-      if(a.methodDescription) parts.push(`Method description: ${a.methodDescription}`);
-      if(a.paramType || a.paramValue) parts.push(`Effect/estimate: ${cleanVal(a.paramValue || a.estimateValue)} ${a.paramType ? '(' + a.paramType + ')' : ''}`);
-      if(a.dispersionType || a.dispersionValue) parts.push(`Dispersion: ${cleanVal(a.dispersionValue)} ${a.dispersionType ? '(' + a.dispersionType + ')' : ''}`);
-      if(a.pValue !== undefined || a.pValueRange || a.pValueComment) parts.push(`P-value: ${cleanVal(a.pValue || a.pValueRange)}${a.pValueComment ? ' — ' + a.pValueComment : ''}`);
-      if(a.ciPctValue || a.ciLowerLimit || a.ciUpperLimit || a.ciLowerLimitComment || a.ciUpperLimitComment){
-        parts.push(`Confidence interval: ${a.ciPctValue ? a.ciPctValue + '% ' : ''}${cleanVal(a.ciLowerLimit)} to ${cleanVal(a.ciUpperLimit)}${a.ciLowerLimitComment ? ' — lower comment: ' + a.ciLowerLimitComment : ''}${a.ciUpperLimitComment ? ' — upper comment: ' + a.ciUpperLimitComment : ''}`);
-      }
-      if(a.nonInferiorityType) parts.push(`Non-inferiority/superiority type: ${a.nonInferiorityType}`);
-      if(a.statisticalComment) parts.push(`Statistical comment: ${a.statisticalComment}`);
-      if(a.estimateComment) parts.push(`Estimate comment: ${a.estimateComment}`);
 
-      const knownKeys = new Set([
-        'groupIds','groupId','statisticalMethod','method','testName','methodDescription','paramType','paramValue','estimateValue',
-        'dispersionType','dispersionValue','pValue','pValueRange','pValueComment','ciPctValue','ciLowerLimit','ciUpperLimit',
-        'ciLowerLimitComment','ciUpperLimitComment','nonInferiorityType','statisticalComment','estimateComment'
-      ]);
-      const extra = Object.fromEntries(Object.entries(a).filter(([k,v]) => !knownKeys.has(k) && v !== undefined && v !== null && v !== ''));
-      const extraJson = compactJson(extra, 700);
-      if(extraJson && extraJson !== '{}') parts.push(`Additional analysis fields: ${extraJson}`);
+      if(a.methodDescription) {
+        parts.push(`Method description: ${a.methodDescription}`);
+      }
+
+      if(a.paramType || a.paramValue) {
+        parts.push(`Effect/estimate: ${cleanVal(a.paramValue || a.estimateValue)} ${a.paramType ? '(' + a.paramType + ')' : ''}`);
+      }
+
+      if(a.pValue !== undefined || a.pValueRange || a.pValueComment) {
+        parts.push(`P-value: ${cleanVal(a.pValue || a.pValueRange)}${a.pValueComment ? ' — ' + a.pValueComment : ''}`);
+      }
+
+      if(a.ciPctValue || a.ciLowerLimit || a.ciUpperLimit){
+        parts.push(`Confidence interval: ${a.ciPctValue ? a.ciPctValue + '% ' : ''}${cleanVal(a.ciLowerLimit)} to ${cleanVal(a.ciUpperLimit)}`);
+      }
 
       return parts.filter(Boolean).join('; ');
     }
@@ -684,28 +843,24 @@ function buildContext(study){
     const outText = outMeasures.shown.map((m, index) => {
       const classes = (m.classes || []).map(cl => {
         const cats = (cl.categories || []).map(c => {
-          const vals = (c.measurements || []).map(formatMeasurement).join(', ');
+          const vals = (c.measurements || [])
+            .map(formatMeasurement)
+            .join(', ');
           return `${c.title || 'Category'}: ${vals || 'N/A'}`;
         }).join(' | ');
+
         return `${cl.title ? cl.title + ': ' : ''}${cats || 'N/A'}`;
       }).join(' || ');
 
       const analyses = m.analyses || [];
-      if(analyses.length > 0) anyStatisticalAnalysis = true;
+
+      if(analyses.length > 0) {
+        anyStatisticalAnalysis = true;
+      }
 
       const analysisText = analyses.length
         ? analyses.map((a, i) => `Analysis ${i + 1}: ${formatAnalysis(a)}`).join('\n  ')
         : 'No p-values, confidence intervals, statistical methods, or significance testing were listed for this outcome in the ClinicalTrials.gov analysis fields.';
-
-      const denominatorText = compactJson(m.denoms || m.denomsUnits || m.denominatorUnits || '', 700);
-      const extraOutcomeFields = compactJson({
-        reportingStatus: m.reportingStatus,
-        populationDescription: m.populationDescription,
-        paramType: m.paramType,
-        dispersionType: m.dispersionType,
-        unitOfMeasure: m.unitOfMeasure,
-        otherAnalysisFieldsRaw: m.analyses
-      }, 1200);
 
       return `Outcome ${index + 1}: [${m.type || 'Outcome'}] ${m.title || 'Untitled outcome'}
 Description: ${m.description || 'N/A'}
@@ -713,35 +868,55 @@ Time frame: ${m.timeFrame || 'N/A'}
 Unit of measure: ${m.unitOfMeasure || 'N/A'}
 Population description: ${m.populationDescription || 'N/A'}
 Results: ${classes || 'N/A'}
-Denominators: ${denominatorText || 'N/A'}
-Statistical analysis: ${analysisText}
-Additional outcome metadata: ${extraOutcomeFields || 'N/A'}`;
+Statistical analysis: ${analysisText}`;
     }).join('\n\n');
 
     out.push(`## RESULTS: OUTCOME MEASURES AND STATISTICAL ANALYSES
 ${outText || 'N/A'}
-Overall statistical analysis availability: ${anyStatisticalAnalysis ? 'At least one outcome includes statistical analysis fields in ClinicalTrials.gov.' : 'No p-values, confidence intervals, statistical methods, or significance testing were found in the ClinicalTrials.gov outcome analysis fields included in this record.'}${outMeasures.omitted ? `\n(+${outMeasures.omitted} more outcome measures not shown because this trial has many outcomes — ask about a specific outcome name if needed)` : ''}`);
+Overall statistical analysis availability: ${anyStatisticalAnalysis ? 'At least one outcome includes statistical analysis fields in ClinicalTrials.gov.' : 'No p-values, confidence intervals, statistical methods, or significance testing were found in the ClinicalTrials.gov outcome analysis fields included in this record.'}`);
 
     const rawResultsJson = compactJson(r, 50000);
+
     out.push(`## RAW CLINICALTRIALS.GOV RESULTS JSON EXCERPT
-This excerpt is included so the assistant can answer less common results questions beyond the manually summarized fields. If something is not in this JSON excerpt, say it is not available in the provided registry data.
+This excerpt helps the assistant answer less common results questions beyond the manually summarized fields.
 ${rawResultsJson || 'N/A'}`);
 
     const ae = r.adverseEventsModule || {};
     const seriousEvents = truncateList(ae.seriousEvents||[], 12);
     const otherEvents = truncateList(ae.otherEvents||[], 12);
-    const fmtEvent = e => `- ${e.term} (${e.organSystem||''}): ${(e.stats||[]).map(s=>`${s.groupId}=${s.numAffected}/${s.numAtRisk}`).join(', ')}`;
-    out.push(`## RESULTS: ADVERSE EVENTS\nFrequency threshold: ${ae.frequencyThreshold||'N/A'}\nSerious events:\n${seriousEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${seriousEvents.omitted ? `\n(+${seriousEvents.omitted} more serious events not shown)` : ''}\nOther/non-serious events:\n${otherEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${otherEvents.omitted ? `\n(+${otherEvents.omitted} more not shown)` : ''}\nAll-cause mortality/deaths and group flow: ${JSON.stringify(ae.eventGroups||[]).slice(0,600)}`);
+
+    const fmtEvent = e => `- ${e.term} (${e.organSystem||''}): ${(e.stats||[])
+      .map(s=>`${s.groupId}=${s.numAffected}/${s.numAtRisk}`)
+      .join(', ')}`;
+
+    out.push(`## RESULTS: ADVERSE EVENTS
+Frequency threshold: ${ae.frequencyThreshold||'N/A'}
+
+Serious events:
+${seriousEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${seriousEvents.omitted ? `\n(+${seriousEvents.omitted} more serious events not shown)` : ''}
+
+Other/non-serious events:
+${otherEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${otherEvents.omitted ? `\n(+${otherEvents.omitted} more not shown)` : ''}`);
   } else {
     hasResults = false;
-    out.push(`## RESULTS\nNo results have been posted to ClinicalTrials.gov for this trial. Only registry/protocol information (above) is available.`);
+
+    out.push(`## RESULTS
+No results have been posted to ClinicalTrials.gov for this trial. Only registry/protocol information is available.`);
   }
 
   return out.join('\n\n');
 }
 
-// ---------- rendering the ledger card ----------
+// ---------- render selected trial card ----------
 function renderLedger(study){
+  /*
+    This updates the left trial summary card.
+
+    Important:
+    - The visible Literature box was removed.
+    - PubMed/open-access still loads in the background for the chatbot.
+  */
+
   const id = study.protocolSection?.identificationModule || {};
   const status = study.protocolSection?.statusModule || {};
   const sponsor = study.protocolSection?.sponsorCollaboratorsModule || {};
@@ -757,12 +932,9 @@ function renderLedger(study){
     <div class="ledger-field"><span class="label">Conditions</span>${esc((cond.conditions||[]).join(', ')||'N/A')}</div>
     <div class="ledger-field"><span class="label">Enrollment</span>${esc(design.enrollmentInfo?.count||'N/A')}</div>
     <div class="results-flag ${hasResults ? 'has-results' : 'no-results'}">${hasResults ? '✓ Results posted' : '✕ No results posted yet'}</div>
-    <div class="literature-box">
-      <span class="label">Literature</span>
-      <div id="literatureStatus">PubMed/open-access search will run after this trial loads.</div>
-    </div>
     <span class="change-trial" id="changeTrialBtn">← Search a different trial</span>
   `;
+
   document.getElementById('changeTrialBtn').addEventListener('click', resetToSearch);
 }
 
@@ -774,19 +946,27 @@ function renderSuggestions(){
     'What adverse events were most common?',
     'Were p-values or confidence intervals reported?'
   ];
+
   els.suggestionChips.innerHTML = '';
+
   base.forEach(s => {
     const chip = document.createElement('div');
     chip.className = 'suggestion-chip';
     chip.textContent = s;
-    chip.addEventListener('click', () => { els.chatInput.value = s; sendMessage(); });
+
+    chip.addEventListener('click', () => {
+      els.chatInput.value = s;
+      sendMessage();
+    });
+
     els.suggestionChips.appendChild(chip);
   });
 }
 
-
 function getTrialIdentifiers(study){
+  // Pulls identifiers that the backend uses to search PubMed/open-access sources.
   const id = study.protocolSection?.identificationModule || {};
+
   return {
     nctId: id.nctId || '',
     briefTitle: id.briefTitle || '',
@@ -795,11 +975,23 @@ function getTrialIdentifiers(study){
 }
 
 function renderLiteratureStatus(html){
+  /*
+    We removed the visible Literature box.
+    So literatureStatus usually does not exist anymore.
+    This function safely does nothing if the element is missing.
+  */
+
   const el = document.getElementById('literatureStatus');
-  if(el) el.innerHTML = html;
+
+  if(el) {
+    el.innerHTML = html;
+  }
 }
 
 function renderLiteratureArticles(articles){
+  // This still exists because background literature retrieval can still happen.
+  // It just won't show anything visually if literatureStatus does not exist.
+
   if(!articles || articles.length === 0){
     renderLiteratureStatus('No PubMed or open-access article matches were found automatically. The chatbot will use the ClinicalTrials.gov record only.');
     return;
@@ -818,12 +1010,26 @@ function renderLiteratureArticles(articles){
 }
 
 async function loadRelatedLiterature(study){
+  /*
+    This searches PubMed/open-access through the BACKEND route /api/literature.
+
+    Why backend?
+    - PubMed/open-access retrieval is more complex.
+    - Backend can handle APIs more safely.
+    - The frontend just asks /api/literature for the literature context.
+
+    This runs in the background after a trial loads.
+    It does NOT show articles on the left card anymore.
+  */
+
   literatureContext = '';
   literatureArticles = [];
+
   renderLiteratureStatus('<span class="spinner"></span>Searching PubMed and legal open-access full text…');
 
   try{
     const ids = getTrialIdentifiers(study);
+
     const res = await fetch('/api/literature', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -831,6 +1037,7 @@ async function loadRelatedLiterature(study){
     });
 
     const data = await res.json();
+
     if(!res.ok || data.error){
       throw new Error(data.error?.message || 'literature search failed');
     }
@@ -851,6 +1058,8 @@ function resetToSearch(){
   literatureContext = '';
   literatureArticles = [];
   chatHistory = [];
+  hasResults = false;
+
   els.mainLayout.style.display = 'none';
   document.getElementById('searchBlock').style.display = 'block';
   els.chatScroll.innerHTML = '';
@@ -858,22 +1067,37 @@ function resetToSearch(){
   els.resultsList.innerHTML = '';
 }
 
-// ---------- loading a trial ----------
+// ---------- load one trial ----------
 async function loadTrial(nctId){
+  /*
+    Full trial-loading flow:
+    1) Fetch the trial JSON by NCT ID.
+    2) Build trialContext for Claude.
+    3) Show the trial card + chat UI.
+    4) Start PubMed/open-access search in the background.
+  */
+
   els.searchError.innerHTML = '';
   els.resultsList.innerHTML = '<div class="hint"><span class="spinner"></span>Loading trial record…</div>';
+
   try{
     const study = await fetchTrialById(nctId);
+
     currentTrial = study;
     trialContext = buildContext(study);
     chatHistory = [];
+
     renderLedger(study);
+
     document.getElementById('searchBlock').style.display = 'none';
     els.mainLayout.style.display = 'grid';
     els.chatScroll.innerHTML = '';
     els.emptyState.style.display = 'flex';
     els.chatScroll.appendChild(els.emptyState);
+
     renderSuggestions();
+
+    // Background literature search. It helps the chatbot but does not show on left card.
     loadRelatedLiterature(study);
   } catch(err){
     els.resultsList.innerHTML = '';
@@ -883,8 +1107,20 @@ async function loadTrial(nctId){
 
 // ---------- search flow ----------
 async function handleSearch(){
+  /*
+    Runs when user clicks Search or presses Enter.
+
+    If exact NCT ID:
+    - Load the trial directly.
+
+    If keyword:
+    - Search ClinicalTrials.gov and show matching trials.
+  */
+
   const term = els.searchInput.value.trim();
+
   if(!term) return;
+
   els.searchError.innerHTML = '';
   els.resultsList.innerHTML = '<div class="hint"><span class="spinner"></span>Searching ClinicalTrials.gov and loading matching trials…</div>';
 
@@ -892,6 +1128,7 @@ async function handleSearch(){
     await loadTrial(term);
     return;
   }
+
   try{
     const studies = await searchTrials(term);
     renderResults(studies);
@@ -902,56 +1139,118 @@ async function handleSearch(){
 }
 
 els.searchBtn.addEventListener('click', handleSearch);
-els.searchInput.addEventListener('keydown', e => { if(e.key === 'Enter') handleSearch(); });
+
+els.searchInput.addEventListener('keydown', e => {
+  if(e.key === 'Enter') {
+    handleSearch();
+  }
+});
 
 // ---------- chat flow ----------
 function appendMessage(role, text, sources){
-  if(els.emptyState.parentNode) els.emptyState.remove();
+  /*
+    Adds a chat bubble to the screen.
+
+    role = "user" or "assistant"
+    text = message content
+    sources = optional source chips under the answer
+  */
+
+  if(els.emptyState.parentNode) {
+    els.emptyState.remove();
+  }
+
   const wrap = document.createElement('div');
   wrap.className = `msg ${role}`;
+
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.textContent = text;
+
   wrap.appendChild(bubble);
+
   if(sources && sources.length){
     const sl = document.createElement('div');
     sl.className = 'sources-line';
+
     sources.forEach(s => {
       const chip = document.createElement('span');
       chip.className = 'source-chip';
       chip.textContent = '§ ' + s;
       sl.appendChild(chip);
     });
+
     wrap.appendChild(sl);
   }
+
   els.chatScroll.appendChild(wrap);
   els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
+
   return wrap;
 }
 
 function parseSources(text){
+  /*
+    Claude is instructed to end with:
+    Sources: X, Y
+
+    This function separates:
+    - main answer text
+    - source labels
+  */
+
   const match = text.match(/Sources?:\s*(.+)\s*$/i);
-  if(!match) return { body: text.trim(), sources: [] };
+
+  if(!match) {
+    return {
+      body: text.trim(),
+      sources: []
+    };
+  }
+
   const body = text.slice(0, match.index).trim();
-  const sources = match[1].split(',').map(s => s.trim()).filter(Boolean);
+
+  const sources = match[1]
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
   return { body, sources };
 }
 
 async function sendMessage(){
+  /*
+    Runs when the user asks a question.
+
+    The important thing:
+    The frontend does NOT call Claude directly.
+    It sends the request to /api/chat.
+    The backend then calls Claude using your private API key.
+  */
+
   const text = els.chatInput.value.trim();
+
   if(!text || !currentTrial) return;
+
   els.chatInput.value = '';
+
   appendMessage('user', text);
-  chatHistory.push({ role: 'user', content: text });
+
+  chatHistory.push({
+    role: 'user',
+    content: text
+  });
 
   const typingWrap = document.createElement('div');
   typingWrap.className = 'msg assistant';
   typingWrap.innerHTML = `<div class="bubble typing"><span class="spinner"></span>Reading the trial record…</div>`;
+
   els.chatScroll.appendChild(typingWrap);
   els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
   els.sendBtn.disabled = true;
 
   const systemPrompt = `You are a clinical evidence assistant. Answer questions using ONLY the evidence data provided below — never outside knowledge, never speculation about this specific trial.
+
 Rules:
 - Be direct and concise. No filler, no hedging, no consulting-speak.
 - Prefer ClinicalTrials.gov for registry/protocol facts and posted trial results.
@@ -978,16 +1277,30 @@ ${literatureContext || 'No PubMed abstract or legal open-access full-text conten
         messages: chatHistory
       })
     });
+
     const data = await res.json();
+
     typingWrap.remove();
+
     if(data.error){
       appendMessage('assistant', `Error: ${data.error.message || 'request failed'}`);
       return;
     }
-    const fullText = (data.content||[]).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+
+    const fullText = (data.content||[])
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join('\n')
+      .trim();
+
     const { body, sources } = parseSources(fullText);
+
     appendMessage('assistant', body, sources);
-    chatHistory.push({ role: 'assistant', content: fullText });
+
+    chatHistory.push({
+      role: 'assistant',
+      content: fullText
+    });
   } catch(err){
     typingWrap.remove();
     appendMessage('assistant', `Something went wrong reaching the model: ${err.message}`);
@@ -997,6 +1310,7 @@ ${literatureContext || 'No PubMed abstract or legal open-access full-text conten
 }
 
 els.sendBtn.addEventListener('click', sendMessage);
+
 els.chatInput.addEventListener('keydown', e => {
   if(e.key === 'Enter' && !e.shiftKey){
     e.preventDefault();
