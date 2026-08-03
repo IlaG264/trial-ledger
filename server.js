@@ -73,10 +73,30 @@ function textOf(value) {
 // Normalize spaces and place a safe character limit on long evidence text.
 function cleanText(text, maxLen = 6000) {
   return String(text || "")
+
+    // Keep abstract section headings, but remove the HTML tags.
+    // Example: <h4>Introduction</h4> becomes "Introduction: "
+    .replace(/<h4[^>]*>/gi, "")
+    .replace(/<\/h4>/gi, ": ")
+
+    // Remove any other remaining HTML tags.
+    .replace(/<[^>]+>/g, " ")
+
+    // Convert common HTML codes back into normal characters.
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+
+    // Remove extra spaces.
     .replace(/\s+/g, " ")
     .replace(/\[\s+/g, "[")
     .replace(/\s+\]/g, "]")
     .trim()
+
+    // Prevent extremely long text from being returned.
     .slice(0, maxLen);
 }
 
