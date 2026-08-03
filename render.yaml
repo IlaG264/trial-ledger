@@ -1,13 +1,17 @@
 services:
   - type: web
-    name: trial-ledger
-    env: node
+    name: clinical-trial-evidence-assistant
+    runtime: node
+    plan: free
     buildCommand: npm install
     startCommand: npm start
+    healthCheckPath: /api/health
     envVars:
-      - key: NODE_ENV
-        value: production
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5
-      - key: ANTHROPIC_API_KEY
+      - key: NCBI_EMAIL
+        sync: false
+      - key: NCBI_API_KEY
         sync: false

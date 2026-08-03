@@ -1,1607 +1,2300 @@
 <!DOCTYPE html>
 <!--
-  Clinical Trial Evidence Assistant
-  ------------------------------------------------------------
-  Student-style explanation:
+  Clinical Trial Evidence Assistant — FRONTEND
+  -----------------------------------------------------------------------------
+  This file controls everything the user sees and clicks.
 
-  This is the FRONTEND file.
+  New features in this version:
+  1) Keyword results are sorted so studies with posted results appear first.
+  2) Every search card has a "View abstract" button.
+  3) The selected trial page shows related PubMed/Europe PMC papers in a sidebar.
+  4) A second trial can be added by NCT ID or keyword.
+  5) When two trials are selected, Claude answers with a comparison table.
 
-  The frontend is what the user sees:
-  - Search bar
-  - Trial result cards
-  - Trial summary card
-  - Chat window
-  - Ask button
-
-  This file has 3 parts:
-  1) HTML = page structure
-  2) CSS = styling / UI design
-  3) JavaScript = app logic
-
-  The backend is separate in server.js.
-  The backend safely talks to Claude and PubMed/open-access sources.
+  Google Scholar is intentionally NOT scraped or integrated. The literature tools
+  use official PubMed/NCBI and Europe PMC APIs instead.
 -->
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Clinical Trial Evidence Assistant</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clinical Trial Evidence Assistant</title>
 
-<!-- Google Fonts -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-<style>
-  /*
-    CSS SECTION
-    ------------------------------------------------------------
-    CSS controls the appearance of the page.
+  <style>
+    /* ---------------------------------------------------------------------- */
+    /* Main colors and page setup                                             */
+    /* ---------------------------------------------------------------------- */
 
-    This includes:
-    - colors
-    - spacing
-    - cards
-    - buttons
-    - search results
-    - chat bubbles
-  */
+    :root{
+      --paper:#EEF1EC;
+      --paper-raised:#F8F9F6;
+      --white:#FFFFFF;
+      --ink:#16231F;
+      --ink-soft:#52605A;
+      --rule:#CBD1C7;
+      --rule-dark:#AEB8AC;
+      --teal:#1B6E6E;
+      --teal-deep:#0F4A4A;
+      --teal-soft:#DCEBEA;
+      --rust:#9C4430;
+      --rust-soft:#F1E1DB;
+      --gold:#775C16;
+      --gold-soft:#F4EBCB;
+      --shadow:0 8px 26px rgba(22,35,31,.08);
+    }
 
-  :root{
-    --paper: #EEF1EC;
-    --paper-raised: #F8F9F6;
-    --ink: #16231F;
-    --ink-soft: #4B5750;
-    --rule: #CBD1C7;
-    --teal: #1B6E6E;
-    --teal-deep: #0F4A4A;
-    --rust: #9C4430;
-    --rust-soft: #F1E1DB;
-    --teal-soft: #DCEBEA;
-  }
+    *{box-sizing:border-box;}
+    html,body{margin:0;padding:0;}
 
-  *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;}
+    body{
+      min-height:100vh;
+      background:var(--paper);
+      color:var(--ink);
+      font-family:'IBM Plex Sans',sans-serif;
+    }
 
-  body{
-    background:var(--paper);
-    color:var(--ink);
-    font-family:'IBM Plex Sans', sans-serif;
-    min-height:100vh;
-  }
+    button,input,textarea{font:inherit;}
+    button{cursor:pointer;}
 
-  .app{
-    max-width:1100px;
-    margin:0 auto;
-    padding:28px 20px 60px;
-  }
+    .app{
+      max-width:1220px;
+      margin:0 auto;
+      padding:26px 20px 60px;
+    }
 
-  header.masthead{
-    display:flex;
-    align-items:baseline;
-    justify-content:space-between;
-    border-bottom:2px solid var(--ink);
-    padding-bottom:14px;
-    margin-bottom:22px;
-    flex-wrap:wrap;
-    gap:8px;
-  }
+    /* ---------------------------------------------------------------------- */
+    /* Header                                                                  */
+    /* ---------------------------------------------------------------------- */
 
-  header.masthead h1{
-    font-family:'IBM Plex Sans', sans-serif;
-    font-size:28px;
-    font-weight:600;
-    margin:0;
-    letter-spacing:0;
-  }
+    .masthead{
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      flex-wrap:wrap;
+      gap:12px;
+      padding-bottom:15px;
+      margin-bottom:22px;
+      border-bottom:2px solid var(--ink);
+    }
 
-  header.masthead .kicker{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:11px;
-    letter-spacing:0.12em;
-    text-transform:uppercase;
-    color:var(--ink-soft);
-  }
+    .masthead h1{
+      margin:2px 0 0;
+      font-size:29px;
+      line-height:1.15;
+      font-weight:600;
+    }
 
-  .search-block{
-    background:var(--paper-raised);
-    border:1px solid var(--rule);
-    border-radius:8px;
-    padding:18px;
-    margin-bottom:20px;
-  }
+    .kicker{
+      font-family:'IBM Plex Mono',monospace;
+      font-size:10.5px;
+      letter-spacing:.11em;
+      text-transform:uppercase;
+      color:var(--ink-soft);
+    }
 
-  .search-row{
-    display:flex;
-    gap:10px;
-    flex-wrap:wrap;
-  }
+    .source-note{
+      max-width:390px;
+      text-align:right;
+      line-height:1.45;
+    }
 
-  .search-row input{
-    flex:1;
-    min-width:220px;
-    padding:11px 12px;
-    border:1px solid var(--rule);
-    border-radius:6px;
-    font-family:'IBM Plex Sans', sans-serif;
-    font-size:14px;
-    background:#fff;
-    color:var(--ink);
-  }
+    /* ---------------------------------------------------------------------- */
+    /* Reusable controls                                                       */
+    /* ---------------------------------------------------------------------- */
 
-  .search-row input:focus{
-    outline:2px solid var(--teal);
-    outline-offset:1px;
-  }
+    .btn{
+      border:1px solid var(--teal-deep);
+      border-radius:7px;
+      background:var(--teal);
+      color:white;
+      padding:10px 15px;
+      font-size:13px;
+      font-weight:600;
+      transition:transform .12s ease,background .12s ease,border-color .12s ease;
+    }
 
-  button{
-    font-family:'IBM Plex Sans', sans-serif;
-    font-weight:500;
-    font-size:13.5px;
-    border-radius:6px;
-    border:1px solid var(--teal-deep);
-    background:var(--teal);
-    color:#fff;
-    padding:11px 18px;
-    cursor:pointer;
-    transition:background .12s ease;
-  }
+    .btn:hover{background:var(--teal-deep);}
+    .btn:active{transform:translateY(1px);}
+    .btn:disabled{opacity:.55;cursor:not-allowed;}
 
-  button:hover{background:var(--teal-deep);}
-  button:disabled{background:#9AAEAA;border-color:#9AAEAA;cursor:not-allowed;}
+    .btn.secondary{
+      background:var(--white);
+      color:var(--teal-deep);
+      border-color:var(--rule-dark);
+    }
 
-  .hint{
-    font-size:12px;
-    color:var(--ink-soft);
-    margin-top:8px;
-    font-family:'IBM Plex Mono', monospace;
-  }
+    .btn.secondary:hover{
+      background:var(--teal-soft);
+      border-color:var(--teal);
+    }
 
-  .results-list{
-    margin-top:14px;
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-  }
+    .btn.danger{
+      background:var(--white);
+      color:var(--rust);
+      border-color:#D8A99D;
+    }
 
-  /*
-    NICE SEARCH RESULT CARDS
-    ------------------------------------------------------------
-    These are the cards that appear after a keyword search.
+    .btn.danger:hover{background:var(--rust-soft);}
 
-    Instead of showing only the trial title, each card now shows:
-    - title
-    - NCT ID
-    - status
-    - phase
-    - sponsor
-    - condition
-    - whether it is a registry record or may have results
-  */
+    .btn.small{
+      padding:7px 10px;
+      border-radius:6px;
+      font-size:11.5px;
+    }
 
-  .result-card{
-    border:1px solid var(--rule);
-    background:#fff;
-    border-radius:10px;
-    padding:14px 16px;
-    cursor:pointer;
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-    box-shadow:0 1px 3px rgba(0,0,0,0.04);
-    transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
-  }
+    .text-input,
+    .chat-input{
+      width:100%;
+      border:1px solid var(--rule-dark);
+      border-radius:7px;
+      background:white;
+      color:var(--ink);
+      padding:11px 12px;
+      font-size:14px;
+    }
 
-  .result-card:hover{
-    border-color:var(--teal);
-    box-shadow:0 6px 18px rgba(0,0,0,0.08);
-    transform:translateY(-1px);
-  }
+    .text-input:focus,
+    .chat-input:focus{
+      outline:2px solid var(--teal);
+      outline-offset:1px;
+    }
 
-  .result-top{
-    display:flex;
-    justify-content:space-between;
-    align-items:flex-start;
-    gap:14px;
-  }
+    .hint{
+      margin-top:8px;
+      color:var(--ink-soft);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:11.5px;
+      line-height:1.45;
+    }
 
-  .result-title{
-    font-size:15px;
-    font-weight:600;
-    line-height:1.35;
-    color:var(--ink);
-  }
+    .error-box,
+    .notice-box{
+      margin-top:10px;
+      border-radius:7px;
+      padding:10px 12px;
+      font-size:12.5px;
+      line-height:1.45;
+    }
 
-  .result-nct{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:11px;
-    color:var(--teal-deep);
-    background:var(--teal-soft);
-    border:1px solid var(--teal);
-    padding:4px 7px;
-    border-radius:999px;
-    white-space:nowrap;
-  }
+    .error-box{
+      border:1px solid var(--rust);
+      background:var(--rust-soft);
+      color:var(--rust);
+    }
 
-  .result-meta-grid{
-    display:grid;
-    grid-template-columns:repeat(2, minmax(0, 1fr));
-    gap:8px 12px;
-  }
+    .notice-box{
+      border:1px solid var(--rule-dark);
+      background:var(--paper-raised);
+      color:var(--ink-soft);
+    }
 
-  @media(max-width:640px){
+    .spinner{
+      display:inline-block;
+      width:12px;
+      height:12px;
+      margin-right:6px;
+      border:2px solid var(--rule);
+      border-top-color:var(--teal);
+      border-radius:50%;
+      vertical-align:-2px;
+      animation:spin .7s linear infinite;
+    }
+
+    @keyframes spin{to{transform:rotate(360deg);}}
+
+    /* ---------------------------------------------------------------------- */
+    /* Search page                                                             */
+    /* ---------------------------------------------------------------------- */
+
+    .search-block{
+      background:var(--paper-raised);
+      border:1px solid var(--rule);
+      border-radius:11px;
+      padding:18px;
+      box-shadow:0 2px 8px rgba(22,35,31,.03);
+    }
+
+    .search-row{
+      display:flex;
+      gap:10px;
+      align-items:stretch;
+    }
+
+    .search-row .text-input{flex:1;}
+
+    .results-toolbar{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:8px;
+      margin:16px 0 9px;
+    }
+
+    .results-count{
+      font-family:'IBM Plex Mono',monospace;
+      color:var(--ink-soft);
+      font-size:11.5px;
+    }
+
+    .results-order-note{
+      padding:5px 9px;
+      border-radius:999px;
+      background:var(--teal-soft);
+      color:var(--teal-deep);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:10.5px;
+    }
+
+    .results-list{
+      display:flex;
+      flex-direction:column;
+      gap:11px;
+    }
+
+    .result-card{
+      background:white;
+      border:1px solid var(--rule);
+      border-radius:11px;
+      padding:15px 16px;
+      box-shadow:0 1px 3px rgba(22,35,31,.04);
+      transition:transform .12s ease,border-color .12s ease,box-shadow .12s ease;
+    }
+
+    .result-card:hover{
+      transform:translateY(-1px);
+      border-color:var(--teal);
+      box-shadow:var(--shadow);
+    }
+
+    .result-top{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:14px;
+    }
+
+    .result-title{
+      font-size:16px;
+      font-weight:600;
+      line-height:1.38;
+    }
+
+    .nct-pill{
+      flex:0 0 auto;
+      border:1px solid var(--teal);
+      border-radius:999px;
+      background:var(--teal-soft);
+      color:var(--teal-deep);
+      padding:5px 9px;
+      font-family:'IBM Plex Mono',monospace;
+      font-size:10.5px;
+    }
+
     .result-meta-grid{
-      grid-template-columns:1fr;
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:11px 18px;
+      margin-top:14px;
     }
-  }
 
-  .result-meta-item{
-    font-size:12.5px;
-    color:var(--ink-soft);
-    line-height:1.35;
-  }
+    .meta-item{
+      min-width:0;
+      color:var(--ink-soft);
+      font-size:12.5px;
+      line-height:1.42;
+    }
 
-  .result-meta-item strong{
-    display:block;
-    font-family:'IBM Plex Mono', monospace;
-    font-size:10px;
-    text-transform:uppercase;
-    letter-spacing:.06em;
-    color:var(--ink-soft);
-    margin-bottom:2px;
-  }
+    .meta-label{
+      display:block;
+      margin-bottom:3px;
+      color:var(--ink-soft);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:10px;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+    }
 
-  .result-bottom{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:10px;
-    border-top:1px solid var(--rule);
-    padding-top:10px;
-  }
+    .status-pill,
+    .results-pill{
+      display:inline-block;
+      border-radius:999px;
+      padding:4px 9px;
+      font-family:'IBM Plex Mono',monospace;
+      font-size:10px;
+      text-transform:uppercase;
+      letter-spacing:.035em;
+    }
 
-  .status-pill{
-    display:inline-block;
-    padding:4px 9px;
-    border-radius:999px;
-    font-size:10.5px;
-    font-family:'IBM Plex Mono', monospace;
-    text-transform:uppercase;
-    letter-spacing:.04em;
-    background:var(--teal-soft);
-    color:var(--teal-deep);
-  }
+    .status-pill{
+      background:var(--teal-soft);
+      color:var(--teal-deep);
+    }
 
-  .status-pill.stopped{
-    background:var(--rust-soft);
-    color:var(--rust);
-  }
+    .status-pill.stopped{
+      background:var(--rust-soft);
+      color:var(--rust);
+    }
 
-  .results-mini{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:10.5px;
-    color:var(--ink-soft);
-  }
+    .results-pill.posted{
+      background:var(--gold-soft);
+      color:var(--gold);
+    }
 
-  .open-trial-text{
-    font-size:12px;
-    color:var(--teal-deep);
-    font-weight:600;
-  }
+    .results-pill.registry{
+      background:#ECEFEC;
+      color:var(--ink-soft);
+    }
 
-  .layout{
-    display:grid;
-    grid-template-columns:300px 1fr;
-    gap:20px;
-  }
+    .result-footer{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top:13px;
+      padding-top:11px;
+      border-top:1px solid var(--rule);
+    }
 
-  @media(max-width:820px){
-    .layout{grid-template-columns:1fr;}
-  }
+    .result-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
 
-  .ledger-card{
-    background:var(--paper-raised);
-    border:1px solid var(--rule);
-    border-radius:8px;
-    position:relative;
-    padding:18px 16px 16px;
-  }
+    .abstract-preview{
+      display:none;
+      margin-top:12px;
+      padding:13px;
+      border:1px solid var(--rule);
+      border-radius:8px;
+      background:var(--paper-raised);
+    }
 
-  .ledger-card:before{
-    content:"";
-    position:absolute;
-    top:0; left:0; right:0;
-    height:6px;
-    background:repeating-linear-gradient(90deg, var(--ink) 0 8px, transparent 8px 16px);
-    opacity:0.15;
-    border-radius:8px 8px 0 0;
-  }
+    .abstract-preview.open{display:block;}
 
-  .ledger-card .nct{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:11px;
-    color:var(--teal-deep);
-    letter-spacing:0.06em;
-  }
+    .abstract-preview h4{
+      margin:0 0 5px;
+      font-family:'Source Serif 4',serif;
+      font-size:16px;
+      line-height:1.3;
+    }
 
-  .ledger-card h2{
-    font-family:'Source Serif 4', serif;
-    font-size:17px;
-    line-height:1.3;
-    margin:6px 0 10px;
-  }
+    .abstract-meta{
+      margin-bottom:8px;
+      color:var(--ink-soft);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:10.5px;
+      line-height:1.4;
+    }
 
-  .ledger-field{
-    font-size:12.5px;
-    margin-bottom:7px;
-    line-height:1.4;
-  }
+    .abstract-text{
+      color:var(--ink-soft);
+      font-size:12.5px;
+      line-height:1.55;
+    }
 
-  .ledger-field .label{
-    display:block;
-    font-family:'IBM Plex Mono', monospace;
-    font-size:10px;
-    text-transform:uppercase;
-    letter-spacing:.06em;
-    color:var(--ink-soft);
-    margin-bottom:1px;
-  }
+    /* ---------------------------------------------------------------------- */
+    /* Selected trial page                                                     */
+    /* ---------------------------------------------------------------------- */
 
-  .change-trial{
-    display:block;
-    margin-top:14px;
-    font-size:12px;
-    color:var(--teal-deep);
-    cursor:pointer;
-    text-decoration:underline;
-  }
+    .main-layout{
+      display:grid;
+      grid-template-columns:355px minmax(0,1fr);
+      gap:20px;
+      align-items:start;
+    }
 
-  .results-flag{
-    margin-top:12px;
-    padding:8px 10px;
-    border-radius:6px;
-    font-size:11.5px;
-    font-family:'IBM Plex Mono', monospace;
-  }
+    .sidebar{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
 
-  .results-flag.has-results{
-    background:var(--teal-soft);
-    color:var(--teal-deep);
-  }
+    .panel{
+      background:var(--paper-raised);
+      border:1px solid var(--rule);
+      border-radius:10px;
+      padding:15px;
+    }
 
-  .results-flag.no-results{
-    background:var(--rust-soft);
-    color:var(--rust);
-  }
+    .panel-title{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      margin-bottom:11px;
+    }
 
-  .chat-panel{
-    background:#fff;
-    border:1px solid var(--rule);
-    border-radius:8px;
-    display:flex;
-    flex-direction:column;
-    min-height:520px;
-  }
+    .panel-title h3{
+      margin:0;
+      font-size:14px;
+      font-weight:600;
+    }
 
-  .chat-scroll{
-    flex:1;
-    overflow-y:auto;
-    padding:18px;
-    display:flex;
-    flex-direction:column;
-    gap:16px;
-    max-height:640px;
-  }
+    .trial-card{
+      position:relative;
+      overflow:hidden;
+    }
 
-  .msg{max-width:88%;}
-  .msg.user{align-self:flex-end;}
-  .msg.assistant{align-self:flex-start;}
+    .trial-card::before{
+      content:"";
+      position:absolute;
+      top:0;
+      left:0;
+      right:0;
+      height:5px;
+      background:repeating-linear-gradient(90deg,var(--teal) 0 9px,transparent 9px 18px);
+      opacity:.35;
+    }
 
-  .msg .bubble{
-    padding:12px 14px;
-    border-radius:8px;
-    font-size:14px;
-    line-height:1.55;
-    white-space:pre-wrap;
-  }
+    .trial-card.compare::before{
+      background:repeating-linear-gradient(90deg,var(--gold) 0 9px,transparent 9px 18px);
+    }
 
-  .msg.user .bubble{
-    background:var(--teal);
-    color:#fff;
-    border-radius:8px 8px 2px 8px;
-  }
+    .trial-number{
+      margin-top:4px;
+      font-family:'IBM Plex Mono',monospace;
+      font-size:10px;
+      color:var(--teal-deep);
+      text-transform:uppercase;
+      letter-spacing:.06em;
+    }
 
-  .msg.assistant .bubble{
-    background:var(--paper);
-    border:1px solid var(--rule);
-    border-radius:8px 8px 8px 2px;
-  }
+    .trial-card.compare .trial-number{color:var(--gold);}
 
-  .sources-line{
-    margin-top:8px;
-    display:flex;
-    flex-wrap:wrap;
-    gap:6px;
-  }
+    .trial-card h2{
+      margin:7px 0 12px;
+      font-family:'Source Serif 4',serif;
+      font-size:18px;
+      line-height:1.28;
+    }
 
-  .source-chip{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:10.5px;
-    background:var(--teal-soft);
-    color:var(--teal-deep);
-    border:1px solid var(--teal);
-    padding:3px 8px;
-    border-radius:4px;
-  }
+    .trial-field{
+      margin-bottom:8px;
+      color:var(--ink-soft);
+      font-size:12.5px;
+      line-height:1.4;
+    }
 
-  .empty-state{
-    margin:auto;
-    text-align:center;
-    color:var(--ink-soft);
-    font-size:15px;
-    line-height:1.55;
-    max-width:680px;
-    width:100%;
-    padding:32px 24px;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    gap:12px;
-  }
+    .trial-field strong{
+      display:block;
+      margin-bottom:2px;
+      color:var(--ink-soft);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:9.8px;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+    }
 
-  .empty-state .big{
-    font-family:'Source Serif 4', serif;
-    font-size:26px;
-    line-height:1.2;
-    color:var(--ink);
-    margin:0;
-  }
+    .trial-card-actions{
+      display:flex;
+      gap:7px;
+      flex-wrap:wrap;
+      margin-top:12px;
+    }
 
-  .suggestions{
-    display:grid;
-    grid-template-columns:repeat(2, minmax(220px, 1fr));
-    gap:10px;
-    width:100%;
-    max-width:560px;
-    margin-top:8px;
-  }
+    /* Comparison search box shown in the sidebar. */
+    .compare-search-row{
+      display:flex;
+      gap:7px;
+    }
 
-  .suggestion-chip{
-    font-size:13.5px;
-    line-height:1.35;
-    border:1px solid var(--rule);
-    background:var(--paper-raised);
-    padding:10px 12px;
-    border-radius:18px;
-    cursor:pointer;
-    text-align:center;
-  }
+    .compare-search-row .text-input{
+      min-width:0;
+      padding:9px 10px;
+      font-size:12.5px;
+    }
 
-  .suggestion-chip:hover{
-    border-color:var(--teal);
-    background:var(--teal-soft);
-  }
+    .compare-results{
+      display:flex;
+      flex-direction:column;
+      gap:7px;
+      margin-top:10px;
+    }
 
-  @media(max-width:640px){
+    .compare-candidate{
+      border:1px solid var(--rule);
+      border-radius:7px;
+      background:white;
+      padding:9px;
+    }
+
+    .compare-candidate-title{
+      margin-bottom:6px;
+      font-size:11.8px;
+      font-weight:600;
+      line-height:1.35;
+    }
+
+    .compare-candidate-bottom{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      color:var(--ink-soft);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:9.8px;
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Related literature sidebar                                              */
+    /* ---------------------------------------------------------------------- */
+
+    .literature-list{
+      display:flex;
+      flex-direction:column;
+      gap:9px;
+    }
+
+    .literature-card{
+      border:1px solid var(--rule);
+      border-radius:8px;
+      background:white;
+      padding:10px;
+    }
+
+    .literature-card h4{
+      margin:0 0 5px;
+      font-family:'Source Serif 4',serif;
+      font-size:14px;
+      line-height:1.3;
+    }
+
+    .literature-meta{
+      color:var(--ink-soft);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:9.7px;
+      line-height:1.4;
+    }
+
+    .literature-badges{
+      display:flex;
+      gap:5px;
+      flex-wrap:wrap;
+      margin:7px 0;
+    }
+
+    .tiny-badge{
+      border-radius:999px;
+      padding:3px 7px;
+      background:var(--teal-soft);
+      color:var(--teal-deep);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:9px;
+    }
+
+    .tiny-badge.abstract-only{
+      background:#ECEFEC;
+      color:var(--ink-soft);
+    }
+
+    .literature-abstract{
+      display:none;
+      margin-top:7px;
+      color:var(--ink-soft);
+      font-size:11.5px;
+      line-height:1.5;
+    }
+
+    .literature-abstract.open{display:block;}
+
+    .article-link{
+      color:var(--teal-deep);
+      font-size:10.5px;
+      font-weight:600;
+      text-decoration:none;
+    }
+
+    .article-link:hover{text-decoration:underline;}
+
+    /* ---------------------------------------------------------------------- */
+    /* Chat                                                                    */
+    /* ---------------------------------------------------------------------- */
+
+    .chat-panel{
+      min-height:680px;
+      display:flex;
+      flex-direction:column;
+      background:white;
+      border:1px solid var(--rule);
+      border-radius:10px;
+      overflow:hidden;
+    }
+
+    .chat-header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      padding:13px 15px;
+      border-bottom:1px solid var(--rule);
+      background:var(--paper-raised);
+    }
+
+    .chat-header-title{
+      font-size:14px;
+      font-weight:600;
+    }
+
+    .mode-badge{
+      border-radius:999px;
+      padding:5px 9px;
+      background:var(--teal-soft);
+      color:var(--teal-deep);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:9.8px;
+      text-transform:uppercase;
+    }
+
+    .mode-badge.compare{
+      background:var(--gold-soft);
+      color:var(--gold);
+    }
+
+    .chat-scroll{
+      flex:1;
+      min-height:0;
+      max-height:720px;
+      overflow-y:auto;
+      padding:20px;
+      display:flex;
+      flex-direction:column;
+      gap:16px;
+    }
+
+    .empty-state{
+      margin:auto;
+      max-width:660px;
+      width:100%;
+      text-align:center;
+      color:var(--ink-soft);
+    }
+
+    .empty-state h2{
+      margin:0 0 7px;
+      color:var(--ink);
+      font-family:'Source Serif 4',serif;
+      font-size:27px;
+    }
+
+    .empty-state p{
+      margin:0 auto 17px;
+      max-width:510px;
+      font-size:13.5px;
+      line-height:1.55;
+    }
+
     .suggestions{
-      grid-template-columns:1fr;
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:9px;
     }
-  }
 
-  .chat-input-row{
-    border-top:1px solid var(--rule);
-    padding:12px;
-    display:flex;
-    gap:8px;
-  }
+    .suggestion-chip{
+      border:1px solid var(--rule);
+      border-radius:18px;
+      background:var(--paper-raised);
+      padding:9px 11px;
+      color:var(--ink);
+      font-size:12px;
+      line-height:1.35;
+      cursor:pointer;
+    }
 
-  .chat-input-row textarea{
-    flex:1;
-    resize:none;
-    border:1px solid var(--rule);
-    border-radius:6px;
-    padding:10px 12px;
-    font-family:'IBM Plex Sans', sans-serif;
-    font-size:14px;
-    min-height:44px;
-    max-height:120px;
-  }
+    .suggestion-chip:hover{
+      border-color:var(--teal);
+      background:var(--teal-soft);
+    }
 
-  .chat-input-row textarea:focus{
-    outline:2px solid var(--teal);
-    outline-offset:1px;
-  }
+    .msg{max-width:94%;}
+    .msg.user{align-self:flex-end;}
+    .msg.assistant{align-self:flex-start;}
 
-  .typing{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:12px;
-    color:var(--ink-soft);
-  }
+    .bubble{
+      border-radius:9px;
+      padding:12px 14px;
+      font-size:13.5px;
+      line-height:1.58;
+    }
 
-  .error-box{
-    background:var(--rust-soft);
-    color:var(--rust);
-    border:1px solid var(--rust);
-    border-radius:6px;
-    padding:10px 12px;
-    font-size:13px;
-    margin-top:10px;
-  }
+    .msg.user .bubble{
+      background:var(--teal);
+      color:white;
+      border-radius:9px 9px 2px 9px;
+      white-space:pre-wrap;
+    }
 
-  .spinner{
-    display:inline-block;
-    width:12px;height:12px;
-    border:2px solid var(--rule);
-    border-top-color:var(--teal);
-    border-radius:50%;
-    animation:spin .7s linear infinite;
-    vertical-align:middle;
-    margin-right:6px;
-  }
+    .msg.assistant .bubble{
+      border:1px solid var(--rule);
+      background:var(--paper-raised);
+      border-radius:9px 9px 9px 2px;
+    }
 
-  @keyframes spin{
-    to{transform:rotate(360deg);}
-  }
-</style>
+    .assistant-content p{margin:0 0 10px;}
+    .assistant-content p:last-child{margin-bottom:0;}
+    .assistant-content ul,
+    .assistant-content ol{margin:7px 0 10px;padding-left:20px;}
+    .assistant-content h3{margin:4px 0 8px;font-size:15px;}
+
+    .comparison-table-wrap{
+      max-width:100%;
+      overflow-x:auto;
+      margin:9px 0 12px;
+      border:1px solid var(--rule);
+      border-radius:7px;
+      background:white;
+    }
+
+    .comparison-table{
+      width:100%;
+      min-width:540px;
+      border-collapse:collapse;
+      font-size:12px;
+      line-height:1.45;
+    }
+
+    .comparison-table th,
+    .comparison-table td{
+      padding:9px 10px;
+      text-align:left;
+      vertical-align:top;
+      border-right:1px solid var(--rule);
+      border-bottom:1px solid var(--rule);
+    }
+
+    .comparison-table th:last-child,
+    .comparison-table td:last-child{border-right:none;}
+
+    .comparison-table tr:last-child td{border-bottom:none;}
+
+    .comparison-table th{
+      background:var(--teal-soft);
+      color:var(--teal-deep);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:10.5px;
+      letter-spacing:.02em;
+    }
+
+    .sources-line{
+      display:flex;
+      gap:5px;
+      flex-wrap:wrap;
+      margin-top:7px;
+    }
+
+    .source-chip{
+      border:1px solid var(--teal);
+      border-radius:4px;
+      background:var(--teal-soft);
+      color:var(--teal-deep);
+      padding:3px 7px;
+      font-family:'IBM Plex Mono',monospace;
+      font-size:9.5px;
+    }
+
+    .typing{
+      color:var(--ink-soft);
+      font-family:'IBM Plex Mono',monospace;
+      font-size:11.5px;
+    }
+
+    .chat-input-row{
+      display:flex;
+      gap:9px;
+      align-items:flex-end;
+      padding:12px;
+      border-top:1px solid var(--rule);
+      background:var(--paper-raised);
+    }
+
+    .chat-input{
+      min-height:46px;
+      max-height:150px;
+      resize:vertical;
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Mobile                                                                  */
+    /* ---------------------------------------------------------------------- */
+
+    @media(max-width:900px){
+      .main-layout{grid-template-columns:1fr;}
+      .sidebar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
+      .sidebar .literature-panel{grid-column:1/-1;}
+    }
+
+    @media(max-width:660px){
+      .app{padding:18px 12px 40px;}
+      .search-row{flex-direction:column;}
+      .result-meta-grid{grid-template-columns:1fr;}
+      .result-top{flex-direction:column;}
+      .sidebar{display:flex;}
+      .suggestions{grid-template-columns:1fr;}
+      .chat-input-row{align-items:stretch;}
+      .chat-input-row .btn{align-self:flex-end;}
+      .source-note{text-align:left;}
+    }
+  </style>
 </head>
 
 <body>
-<div class="app">
+  <div class="app">
+    <header class="masthead">
+      <div>
+        <div class="kicker">Evidence Extraction + Trial Comparison</div>
+        <h1>Clinical Trial Evidence Assistant</h1>
+      </div>
+      <div class="kicker source-note">
+        Registry: ClinicalTrials.gov API v2<br>
+        Literature: PubMed + Europe PMC
+      </div>
+    </header>
 
-  <!-- Top page header -->
-  <header class="masthead">
-    <div>
-      <div class="kicker">Evidence Extraction Tool</div>
-      <h1>Clinical Trial Evidence Assistant</h1>
-    </div>
-    <div class="kicker" id="sourceNote">Sources: ClinicalTrials.gov + PubMed/Open Access</div>
-  </header>
+    <!-- ------------------------------------------------------------------- -->
+    <!-- Search page                                                        -->
+    <!-- ------------------------------------------------------------------- -->
 
-  <!-- Search area -->
-  <div class="search-block" id="searchBlock">
-    <div class="search-row">
-      <input type="text" id="searchInput" placeholder="Enter a trial name, condition, or NCT number (e.g. NCT04280705)" />
-      <button id="searchBtn">Search</button>
-    </div>
+    <section class="search-block" id="searchBlock">
+      <div class="search-row">
+        <input
+          class="text-input"
+          id="searchInput"
+          type="text"
+          placeholder="Enter a condition, trial title, or NCT ID (for example NCT02630329)"
+        />
+        <button class="btn" id="searchBtn">Search trials</button>
+      </div>
 
-    <div class="hint">Paste an exact NCT number to load a specific trial directly.</div>
+      <div class="hint">
+        Exact NCT IDs load directly. Keyword results are automatically ordered with posted-results studies first.
+      </div>
 
-    <!-- Search result cards will appear here -->
-    <div class="results-list" id="resultsList"></div>
+      <div id="searchError"></div>
+      <div id="resultsArea"></div>
+    </section>
 
-    <!-- Error messages will appear here -->
-    <div id="searchError"></div>
+    <!-- ------------------------------------------------------------------- -->
+    <!-- Trial + comparison + chat page                                     -->
+    <!-- ------------------------------------------------------------------- -->
+
+    <main class="main-layout" id="mainLayout" style="display:none;">
+      <aside class="sidebar">
+        <!-- Trial 1 summary is inserted here with JavaScript. -->
+        <section class="panel trial-card" id="primaryTrialCard"></section>
+
+        <!-- This panel lets the user search for Trial 2. -->
+        <section class="panel" id="compareSearchPanel">
+          <div class="panel-title">
+            <h3>Add a comparison trial</h3>
+          </div>
+
+          <div class="compare-search-row">
+            <input
+              class="text-input"
+              id="compareSearchInput"
+              type="text"
+              placeholder="NCT ID or keyword"
+            />
+            <button class="btn small" id="compareSearchBtn">Find</button>
+          </div>
+
+          <div class="hint">
+            Paste an exact NCT ID or search a keyword, then choose the second study.
+          </div>
+          <div id="compareSearchError"></div>
+          <div class="compare-results" id="compareSearchResults"></div>
+        </section>
+
+        <!-- Trial 2 summary appears only after a second trial is selected. -->
+        <section class="panel trial-card compare" id="comparisonTrialCard" style="display:none;"></section>
+
+        <!-- Related literature for the selected trial(s). -->
+        <section class="panel literature-panel">
+          <div class="panel-title">
+            <h3>Related literature found</h3>
+          </div>
+
+          <div id="primaryLiteratureSection"></div>
+          <div id="comparisonLiteratureSection"></div>
+        </section>
+      </aside>
+
+      <!-- Chat panel. It switches between single-trial and comparison mode. -->
+      <section class="chat-panel">
+        <div class="chat-header">
+          <div class="chat-header-title" id="chatHeaderTitle">Ask about Trial 1</div>
+          <div class="mode-badge" id="modeBadge">Single trial</div>
+        </div>
+
+        <div class="chat-scroll" id="chatScroll">
+          <div class="empty-state" id="emptyState">
+            <h2 id="emptyTitle">Ask this trial anything</h2>
+            <p id="emptyCopy">
+              The assistant uses the selected ClinicalTrials.gov record and any related PubMed or legal open-access evidence found automatically.
+            </p>
+            <div class="suggestions" id="suggestionChips"></div>
+          </div>
+        </div>
+
+        <div class="chat-input-row">
+          <textarea
+            class="chat-input"
+            id="chatInput"
+            placeholder="Ask about study design, outcomes, eligibility, adverse events, or statistical results..."
+          ></textarea>
+          <button class="btn" id="sendBtn">Ask</button>
+        </div>
+      </section>
+    </main>
   </div>
 
-  <!-- Main app area after a trial is selected -->
-  <div class="layout" id="mainLayout" style="display:none;">
+  <script>
+    /* ---------------------------------------------------------------------- */
+    /* References to HTML elements                                            */
+    /* ---------------------------------------------------------------------- */
 
-    <!-- Left trial summary card -->
-    <div class="ledger-card" id="ledgerCard"></div>
+    const els = {
+      searchBlock: document.getElementById('searchBlock'),
+      searchInput: document.getElementById('searchInput'),
+      searchBtn: document.getElementById('searchBtn'),
+      searchError: document.getElementById('searchError'),
+      resultsArea: document.getElementById('resultsArea'),
 
-    <!-- Chat area -->
-    <div class="chat-panel">
-      <div class="chat-scroll" id="chatScroll">
-        <div class="empty-state" id="emptyState">
-          <div class="big">Ask this trial anything</div>
-          <div class="suggestions" id="suggestionChips"></div>
-        </div>
-      </div>
+      mainLayout: document.getElementById('mainLayout'),
+      primaryTrialCard: document.getElementById('primaryTrialCard'),
+      comparisonTrialCard: document.getElementById('comparisonTrialCard'),
 
-      <div class="chat-input-row">
-        <textarea id="chatInput" placeholder="e.g. What were the primary outcome results? Who was excluded from enrollment?"></textarea>
-        <button id="sendBtn">Ask</button>
-      </div>
-    </div>
+      compareSearchInput: document.getElementById('compareSearchInput'),
+      compareSearchBtn: document.getElementById('compareSearchBtn'),
+      compareSearchError: document.getElementById('compareSearchError'),
+      compareSearchResults: document.getElementById('compareSearchResults'),
 
-  </div>
-</div>
+      primaryLiteratureSection: document.getElementById('primaryLiteratureSection'),
+      comparisonLiteratureSection: document.getElementById('comparisonLiteratureSection'),
 
-<script>
-/*
-  JAVASCRIPT SECTION
-  ------------------------------------------------------------
-  This is the logic of the app.
+      chatHeaderTitle: document.getElementById('chatHeaderTitle'),
+      modeBadge: document.getElementById('modeBadge'),
+      chatScroll: document.getElementById('chatScroll'),
+      emptyState: document.getElementById('emptyState'),
+      emptyTitle: document.getElementById('emptyTitle'),
+      emptyCopy: document.getElementById('emptyCopy'),
+      suggestionChips: document.getElementById('suggestionChips'),
+      chatInput: document.getElementById('chatInput'),
+      sendBtn: document.getElementById('sendBtn')
+    };
 
-  Framework:
-  1) Search ClinicalTrials.gov.
-  2) Load a selected trial.
-  3) Convert raw JSON into readable notes called trialContext.
-  4) Send trialContext + the user's question to the backend.
-  5) Backend calls Claude and sends answer back.
+    /* ---------------------------------------------------------------------- */
+    /* Temporary app memory                                                   */
+    /* ---------------------------------------------------------------------- */
 
-  Important:
-  - The frontend does NOT store the Claude API key.
-  - The backend stores the API key safely.
-*/
+    let primaryTrial = null;
+    let comparisonTrial = null;
 
-// These are shortcuts to HTML elements on the page.
-const els = {
-  searchInput: document.getElementById('searchInput'),
-  searchBtn: document.getElementById('searchBtn'),
-  resultsList: document.getElementById('resultsList'),
-  searchError: document.getElementById('searchError'),
-  mainLayout: document.getElementById('mainLayout'),
-  ledgerCard: document.getElementById('ledgerCard'),
-  chatScroll: document.getElementById('chatScroll'),
-  emptyState: document.getElementById('emptyState'),
-  suggestionChips: document.getElementById('suggestionChips'),
-  chatInput: document.getElementById('chatInput'),
-  sendBtn: document.getElementById('sendBtn'),
-};
+    let primaryTrialContext = '';
+    let comparisonTrialContext = '';
 
-// App memory while the user is using the page.
-let currentTrial = null;
-let trialContext = "";
-let literatureContext = "";
-let literatureArticles = [];
-let chatHistory = [];
-let hasResults = false;
+    let primaryLiteratureContext = '';
+    let comparisonLiteratureContext = '';
 
-// ---------- helper functions ----------
-function esc(str){
-  /*
-    This makes text safe before placing it into the page.
-    It helps avoid weird HTML issues if the trial title contains symbols.
-  */
-  const d = document.createElement('div');
-  d.textContent = str ?? '';
-  return d.innerHTML;
-}
+    let primaryArticles = [];
+    let comparisonArticles = [];
 
-function truncateList(arr, n){
-  /*
-    Some clinical trials have very long lists.
-    This shows only the first n items so the context does not become too huge.
-  */
-  if(!Array.isArray(arr)) return { shown: [], omitted: 0 };
-  return { shown: arr.slice(0, n), omitted: Math.max(0, arr.length - n) };
-}
+    let primaryLiteraturePromise = null;
+    let comparisonLiteraturePromise = null;
 
-function isNctId(str){
-  /*
-    Checks if the user typed an exact ClinicalTrials.gov ID.
+    let chatHistory = [];
 
-    Example valid format:
-    NCT04280705
-  */
-  return /^NCT\d{8}$/i.test(str.trim());
-}
+    // Cache literature by NCT ID so clicking "View abstract" repeatedly does
+    // not make the same PubMed/Europe PMC request again.
+    const literatureCache = new Map();
 
-// ---------- ClinicalTrials.gov API ----------
-async function searchTrials(term){
-  /*
-    This searches ClinicalTrials.gov by keyword.
+    /* ---------------------------------------------------------------------- */
+    /* General helper functions                                               */
+    /* ---------------------------------------------------------------------- */
 
-    Example:
-    User types "glioblastoma"
-    The app asks ClinicalTrials.gov for matching studies.
-
-    The API can return many pages, so this function keeps loading pages
-    until it reaches 500 trials or there are no more pages.
-  */
-
-  let allStudies = [];
-  let pageToken = null;
-  const pageSize = 100;
-  const maxStudies = 500;
-
-  do {
-    let url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(term)}&pageSize=${pageSize}`;
-
-    if(pageToken){
-      url += `&pageToken=${encodeURIComponent(pageToken)}`;
+    function esc(value){
+      const div = document.createElement('div');
+      div.textContent = value ?? '';
+      return div.innerHTML;
     }
 
-    const res = await fetch(url);
-
-    if(!res.ok){
-      throw new Error(`ClinicalTrials.gov search failed (${res.status})`);
+    function safeUrl(value){
+      try{
+        const url = new URL(String(value || ''));
+        return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+      }catch(_){
+        return '';
+      }
     }
 
-    const data = await res.json();
+    function isNctId(value){
+      return /^NCT\d{8}$/i.test(String(value || '').trim());
+    }
 
-    allStudies = allStudies.concat(data.studies || []);
-    pageToken = data.nextPageToken || null;
+    function truncateList(value, max){
+      const list = Array.isArray(value) ? value : [];
+      return {
+        shown: list.slice(0, max),
+        omitted: Math.max(0, list.length - max)
+      };
+    }
 
-    if(allStudies.length >= maxStudies) break;
-  } while(pageToken);
+    function cleanLabel(value){
+      const original = String(value || '').trim();
+      if(!original) return 'N/A';
+      if(original === 'NA') return 'Not Applicable';
 
-  return allStudies.slice(0, maxStudies);
-}
+      return original
+        .replace(/_/g, ' ')
+        .replace(/PHASE\s?(\d)/i, 'Phase $1')
+        .replace(/EARLY PHASE\s?1/i, 'Early Phase 1')
+        .toLowerCase()
+        .replace(/\b\w/g, letter => letter.toUpperCase());
+    }
 
-async function fetchTrialById(nctId){
-  /*
-    This loads one exact trial by NCT ID.
+    function trialInfo(study){
+      const p = study?.protocolSection || {};
+      const id = p.identificationModule || {};
+      const status = p.statusModule || {};
+      const design = p.designModule || {};
+      const sponsor = p.sponsorCollaboratorsModule || {};
+      const conditions = p.conditionsModule || {};
+      const description = p.descriptionModule || {};
 
-    Example:
-    NCT04280705
-  */
+      return {
+        nctId: id.nctId || '',
+        briefTitle: id.briefTitle || id.officialTitle || 'Untitled trial',
+        officialTitle: id.officialTitle || '',
+        status: status.overallStatus || 'UNKNOWN',
+        phase: (design.phases || []).map(cleanLabel).join(', ') || 'Not Applicable',
+        sponsor: sponsor.leadSponsor?.name || 'N/A',
+        condition: (conditions.conditions || [])[0] || 'N/A',
+        conditions: conditions.conditions || [],
+        enrollment: design.enrollmentInfo?.count ?? 'N/A',
+        briefSummary: description.briefSummary || '',
+        hasResults: study?.hasResults === true || Boolean(study?.resultsSection)
+      };
+    }
 
-  const url = `https://clinicaltrials.gov/api/v2/studies/${encodeURIComponent(nctId.toUpperCase())}`;
-  const res = await fetch(url);
+    function getTrialIdentifiers(study){
+      const info = trialInfo(study);
+      return {
+        nctId: info.nctId,
+        briefTitle: info.briefTitle,
+        officialTitle: info.officialTitle
+      };
+    }
 
-  if(!res.ok){
-    throw new Error(`Could not find trial ${nctId} (${res.status})`);
-  }
+    function showError(container, message){
+      container.innerHTML = `<div class="error-box">${esc(message)}</div>`;
+    }
 
-  return await res.json();
-}
+    function clearError(container){
+      container.innerHTML = '';
+    }
 
-// ---------- display matching trial results after keyword search ----------
-function renderResults(studies){
-  /*
-    "Display" means show something on the webpage.
+    /* ---------------------------------------------------------------------- */
+    /* ClinicalTrials.gov API                                                 */
+    /* ---------------------------------------------------------------------- */
 
-    This function takes the trial list from ClinicalTrials.gov
-    and turns each trial into a nicer preview card.
-  */
+    async function searchTrials(term, maxStudies = 300){
+      let allStudies = [];
+      let pageToken = null;
+      const pageSize = 100;
 
-  els.resultsList.innerHTML = '';
+      do{
+        let url = `https://clinicaltrials.gov/api/v2/studies?query.term=${encodeURIComponent(term)}&pageSize=${pageSize}`;
+        if(pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
 
-  if(studies.length === 0){
-    els.resultsList.innerHTML = '<div class="hint">No trials matched that search. Try a broader term or a direct NCT number.</div>';
-    return;
-  }
+        const response = await fetch(url);
+        if(!response.ok){
+          throw new Error(`ClinicalTrials.gov search failed (${response.status}).`);
+        }
 
-  const countNote = document.createElement('div');
-  countNote.className = 'hint';
-  countNote.textContent = `${studies.length} trial${studies.length === 1 ? '' : 's'} found. Click one to load its evidence record.`;
-  els.resultsList.appendChild(countNote);
+        const data = await response.json();
+        allStudies = allStudies.concat(data.studies || []);
+        pageToken = data.nextPageToken || null;
 
-  studies.forEach(study => {
-    const p = study.protocolSection || {};
-    const id = p.identificationModule || {};
-    const status = p.statusModule || {};
-    const design = p.designModule || {};
-    const sponsor = p.sponsorCollaboratorsModule || {};
-    const cond = p.conditionsModule || {};
+        if(allStudies.length >= maxStudies) break;
+      }while(pageToken);
 
-    const title = id.briefTitle || id.officialTitle || 'Untitled trial';
-    const nct = id.nctId || '—';
-    const overallStatus = status.overallStatus || 'Unknown status';
-    const phase = (design.phases || []).join(', ') || 'N/A';
-    const leadSponsor = sponsor.leadSponsor?.name || 'N/A';
-    const firstCondition = (cond.conditions || [])[0] || 'N/A';
-    const stopped = /TERMINATED|SUSPENDED|WITHDRAWN/i.test(overallStatus);
+      // Posted-result studies first. Within each group, keep API relevance order.
+      return allStudies
+        .slice(0, maxStudies)
+        .map((study, originalIndex) => ({ study, originalIndex }))
+        .sort((a, b) => {
+          const aHas = trialInfo(a.study).hasResults ? 1 : 0;
+          const bHas = trialInfo(b.study).hasResults ? 1 : 0;
+          return (bHas - aHas) || (a.originalIndex - b.originalIndex);
+        })
+        .map(item => item.study);
+    }
 
-    /*
-      In search results, ClinicalTrials.gov may tell us whether a trial has results.
-      If not, this still works and just says "Registry record."
-    */
-    const resultsPosted = study.hasResults === true || !!study.resultsSection;
+    async function fetchTrialById(nctId){
+      const normalized = String(nctId || '').trim().toUpperCase();
+      const url = `https://clinicaltrials.gov/api/v2/studies/${encodeURIComponent(normalized)}`;
+      const response = await fetch(url);
 
-    const card = document.createElement('div');
-    card.className = 'result-card';
+      if(!response.ok){
+        throw new Error(`Could not find trial ${normalized} (${response.status}).`);
+      }
 
-    card.innerHTML = `
-      <div class="result-top">
-        <div class="result-title">${esc(title)}</div>
-        <div class="result-nct">${esc(nct)}</div>
-      </div>
+      return response.json();
+    }
 
-      <div class="result-meta-grid">
-        <div class="result-meta-item">
-          <strong>Status</strong>
-          <span class="status-pill ${stopped ? 'stopped' : ''}">${esc(overallStatus)}</span>
+    /* ---------------------------------------------------------------------- */
+    /* Main keyword result cards                                              */
+    /* ---------------------------------------------------------------------- */
+
+    function renderSearchResults(studies){
+      els.resultsArea.innerHTML = '';
+
+      if(!studies.length){
+        els.resultsArea.innerHTML = '<div class="notice-box">No matching trials were found. Try a broader keyword or an exact NCT ID.</div>';
+        return;
+      }
+
+      const postedCount = studies.filter(study => trialInfo(study).hasResults).length;
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'results-toolbar';
+      toolbar.innerHTML = `
+        <div class="results-count">${studies.length} trial${studies.length === 1 ? '' : 's'} found · ${postedCount} with posted results</div>
+        <div class="results-order-note">Results-posted studies shown first</div>
+      `;
+
+      const list = document.createElement('div');
+      list.className = 'results-list';
+
+      studies.forEach(study => list.appendChild(createResultCard(study)));
+
+      els.resultsArea.appendChild(toolbar);
+      els.resultsArea.appendChild(list);
+    }
+
+    function createResultCard(study){
+      const info = trialInfo(study);
+      const stopped = /TERMINATED|SUSPENDED|WITHDRAWN/i.test(info.status);
+
+      const card = document.createElement('article');
+      card.className = 'result-card';
+
+      card.innerHTML = `
+        <div class="result-top">
+          <div class="result-title">${esc(info.briefTitle)}</div>
+          <div class="nct-pill">${esc(info.nctId || 'No NCT ID')}</div>
         </div>
 
-        <div class="result-meta-item">
-          <strong>Phase</strong>
-          ${esc(phase)}
+        <div class="result-meta-grid">
+          <div class="meta-item">
+            <span class="meta-label">Status</span>
+            <span class="status-pill ${stopped ? 'stopped' : ''}">${esc(cleanLabel(info.status))}</span>
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">Phase</span>
+            ${esc(info.phase)}
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">Sponsor</span>
+            ${esc(info.sponsor)}
+          </div>
+
+          <div class="meta-item">
+            <span class="meta-label">Condition</span>
+            ${esc(info.condition)}
+          </div>
         </div>
 
-        <div class="result-meta-item">
-          <strong>Sponsor</strong>
-          ${esc(leadSponsor)}
+        <div class="result-footer">
+          <span class="results-pill ${info.hasResults ? 'posted' : 'registry'}">
+            ${info.hasResults ? '✓ Results posted' : 'Registry record'}
+          </span>
+
+          <div class="result-actions">
+            <button class="btn secondary small abstract-btn" type="button">View abstract</button>
+            <button class="btn small open-btn" type="button">Open trial →</button>
+          </div>
         </div>
 
-        <div class="result-meta-item">
-          <strong>Condition</strong>
-          ${esc(firstCondition)}
-        </div>
-      </div>
+        <div class="abstract-preview"></div>
+      `;
 
-      <div class="result-bottom">
-        <div class="results-mini">
-          ${resultsPosted ? '✓ Results may be posted' : 'Registry record'}
-        </div>
-        <div class="open-trial-text">Open trial →</div>
-      </div>
-    `;
+      const abstractButton = card.querySelector('.abstract-btn');
+      const openButton = card.querySelector('.open-btn');
+      const preview = card.querySelector('.abstract-preview');
 
-    card.addEventListener('click', () => loadTrial(nct));
-    els.resultsList.appendChild(card);
-  });
-}
+      abstractButton.addEventListener('click', async () => {
+        if(preview.classList.contains('open')){
+          preview.classList.remove('open');
+          abstractButton.textContent = 'View abstract';
+          return;
+        }
 
-// ---------- build readable notes from ClinicalTrials.gov JSON ----------
-function buildContext(study){
-  /*
-    ClinicalTrials.gov gives us raw JSON.
+        preview.classList.add('open');
+        abstractButton.textContent = 'Hide abstract';
 
-    JSON is organized for computers, but not always easy for humans.
-    This function pulls out important pieces and writes readable notes.
+        if(preview.dataset.loaded === 'true') return;
 
-    These readable notes are called trialContext.
+        preview.innerHTML = '<div class="hint"><span class="spinner"></span>Searching PubMed and Europe PMC...</div>';
 
-    Claude reads trialContext when answering the user's question.
-  */
+        try{
+          const literature = await fetchLiterature(study);
+          const article = literature.articles.find(item => item.abstract) || literature.articles[0];
 
-  const p = study.protocolSection || {};
-  const r = study.resultsSection || null;
+          if(article?.abstract){
+            preview.innerHTML = `
+              <h4>${esc(article.title || 'Related article')}</h4>
+              <div class="abstract-meta">${esc([article.journal, article.year, article.pmid ? `PMID ${article.pmid}` : ''].filter(Boolean).join(' · '))}</div>
+              <div class="abstract-text">${esc(article.abstract)}</div>
+            `;
+          }else if(info.briefSummary){
+            preview.innerHTML = `
+              <h4>ClinicalTrials.gov overview</h4>
+              <div class="abstract-meta">No matched publication abstract was found automatically.</div>
+              <div class="abstract-text">${esc(info.briefSummary)}</div>
+            `;
+          }else{
+            preview.innerHTML = '<div class="abstract-text">No publication abstract or registry summary was found automatically for this study.</div>';
+          }
 
-  const id = p.identificationModule || {};
-  const status = p.statusModule || {};
-  const sponsor = p.sponsorCollaboratorsModule || {};
-  const desc = p.descriptionModule || {};
-  const cond = p.conditionsModule || {};
-  const design = p.designModule || {};
-  const arms = p.armsInterventionsModule || {};
-  const outcomes = p.outcomesModule || {};
-  const elig = p.eligibilityModule || {};
-  const contacts = p.contactsLocationsModule || {};
+          preview.dataset.loaded = 'true';
+        }catch(error){
+          preview.innerHTML = `<div class="error-box">${esc(error.message)}</div>`;
+        }
+      });
 
-  let out = [];
+      openButton.addEventListener('click', () => loadPrimaryTrial(info.nctId));
 
-  out.push(`## IDENTIFICATION
+      return card;
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Convert raw ClinicalTrials.gov JSON into trialContext notes            */
+    /* ---------------------------------------------------------------------- */
+
+    function buildTrialContext(study){
+      const p = study.protocolSection || {};
+      const r = study.resultsSection || null;
+      const id = p.identificationModule || {};
+      const status = p.statusModule || {};
+      const sponsor = p.sponsorCollaboratorsModule || {};
+      const description = p.descriptionModule || {};
+      const conditions = p.conditionsModule || {};
+      const design = p.designModule || {};
+      const arms = p.armsInterventionsModule || {};
+      const outcomes = p.outcomesModule || {};
+      const eligibility = p.eligibilityModule || {};
+      const contacts = p.contactsLocationsModule || {};
+
+      const sections = [];
+
+      sections.push(`## IDENTIFICATION
 NCT ID: ${id.nctId || 'N/A'}
 Brief title: ${id.briefTitle || 'N/A'}
 Official title: ${id.officialTitle || 'N/A'}
-Org study ID: ${id.orgStudyIdInfo?.id || 'N/A'}`);
+Organization study ID: ${id.orgStudyIdInfo?.id || 'N/A'}`);
 
-  out.push(`## STATUS
+      sections.push(`## STATUS
 Overall status: ${status.overallStatus || 'N/A'}
 Start date: ${status.startDateStruct?.date || 'N/A'}
 Primary completion date: ${status.primaryCompletionDateStruct?.date || 'N/A'}
 Completion date: ${status.completionDateStruct?.date || 'N/A'}
 Why stopped: ${status.whyStopped || 'N/A'}`);
 
-  out.push(`## SPONSOR
+      sections.push(`## SPONSOR
 Lead sponsor: ${sponsor.leadSponsor?.name || 'N/A'}
-Collaborators: ${(sponsor.collaborators||[]).map(c=>c.name).join(', ') || 'None listed'}`);
+Collaborators: ${(sponsor.collaborators || []).map(item => item.name).join(', ') || 'None listed'}`);
 
-  out.push(`## DESCRIPTION
-Brief summary: ${desc.briefSummary || 'N/A'}
-Detailed description: ${desc.detailedDescription || 'N/A'}`);
+      sections.push(`## DESCRIPTION
+Brief summary: ${description.briefSummary || 'N/A'}
+Detailed description: ${description.detailedDescription || 'N/A'}`);
 
-  out.push(`## CONDITIONS
-Conditions: ${(cond.conditions||[]).join(', ') || 'N/A'}
-Keywords: ${(cond.keywords||[]).join(', ') || 'N/A'}`);
+      sections.push(`## CONDITIONS
+Conditions: ${(conditions.conditions || []).join(', ') || 'N/A'}
+Keywords: ${(conditions.keywords || []).join(', ') || 'N/A'}`);
 
-  out.push(`## DESIGN
+      sections.push(`## DESIGN
 Study type: ${design.studyType || 'N/A'}
-Phases: ${(design.phases||[]).join(', ') || 'N/A'}
+Phases: ${(design.phases || []).join(', ') || 'N/A'}
 Allocation: ${design.designInfo?.allocation || 'N/A'}
 Intervention model: ${design.designInfo?.interventionModel || 'N/A'}
 Primary purpose: ${design.designInfo?.primaryPurpose || 'N/A'}
 Masking: ${design.designInfo?.maskingInfo?.masking || 'N/A'}
 Enrollment: ${design.enrollmentInfo?.count || 'N/A'} (${design.enrollmentInfo?.type || 'N/A'})`);
 
-  const armGroups = (arms.armGroups||[])
-    .map(a => `- ${a.label} [${a.type||'N/A'}]: ${a.description||'no description'}`)
-    .join('\n');
+      const armText = (arms.armGroups || [])
+        .map(arm => `- ${arm.label || 'Unnamed arm'} [${arm.type || 'N/A'}]: ${arm.description || 'No description'}`)
+        .join('\n');
 
-  const interventions = (arms.interventions||[])
-    .map(iv => `- ${iv.type||''} — ${iv.name||''}: ${iv.description||'no description'}`)
-    .join('\n');
+      const interventionText = (arms.interventions || [])
+        .map(intervention => `- ${intervention.type || 'Intervention'} — ${intervention.name || 'Unnamed'}: ${intervention.description || 'No description'}`)
+        .join('\n');
 
-  out.push(`## ARMS
-${armGroups || 'N/A'}
+      sections.push(`## ARMS
+${armText || 'N/A'}
 
 ## INTERVENTIONS
-${interventions || 'N/A'}`);
+${interventionText || 'N/A'}`);
 
-  const primaryOut = (outcomes.primaryOutcomes||[])
-    .map(o => `- ${o.measure} — ${o.description||''} (time frame: ${o.timeFrame||'N/A'})`)
-    .join('\n');
+      const primaryOutcomes = (outcomes.primaryOutcomes || [])
+        .map(item => `- ${item.measure || 'Unnamed outcome'} — ${item.description || ''} (time frame: ${item.timeFrame || 'N/A'})`)
+        .join('\n');
 
-  const secondaryOut = (outcomes.secondaryOutcomes||[])
-    .map(o => `- ${o.measure} — ${o.description||''} (time frame: ${o.timeFrame||'N/A'})`)
-    .join('\n');
+      const secondaryOutcomes = (outcomes.secondaryOutcomes || [])
+        .map(item => `- ${item.measure || 'Unnamed outcome'} — ${item.description || ''} (time frame: ${item.timeFrame || 'N/A'})`)
+        .join('\n');
 
-  out.push(`## PLANNED OUTCOME MEASURES
-Primary:
-${primaryOut || 'N/A'}
+      sections.push(`## PLANNED OUTCOME MEASURES
+Primary outcomes:
+${primaryOutcomes || 'N/A'}
 
-Secondary:
-${secondaryOut || 'N/A'}`);
+Secondary outcomes:
+${secondaryOutcomes || 'N/A'}`);
 
-  out.push(`## ELIGIBILITY
-Criteria text: ${elig.eligibilityCriteria || 'N/A'}
-Sex: ${elig.sex || 'N/A'}
-Minimum age: ${elig.minimumAge || 'N/A'}
-Maximum age: ${elig.maximumAge || 'N/A'}
-Accepts healthy volunteers: ${elig.healthyVolunteers ?? 'N/A'}`);
+      sections.push(`## ELIGIBILITY
+Criteria: ${eligibility.eligibilityCriteria || 'N/A'}
+Sex: ${eligibility.sex || 'N/A'}
+Minimum age: ${eligibility.minimumAge || 'N/A'}
+Maximum age: ${eligibility.maximumAge || 'N/A'}
+Healthy volunteers: ${eligibility.healthyVolunteers ?? 'N/A'}`);
 
-  const locs = truncateList(
-    (contacts.locations||[]).map(l => `${l.facility||''}, ${l.city||''}, ${l.country||''}`),
-    15
-  );
+      const locations = truncateList(
+        (contacts.locations || []).map(location => `${location.facility || ''}, ${location.city || ''}, ${location.country || ''}`),
+        15
+      );
 
-  out.push(`## LOCATIONS (${(contacts.locations||[]).length} total)
-${locs.shown.join('\n') || 'N/A'}${locs.omitted ? `\n(+${locs.omitted} more not shown)` : ''}`);
+      sections.push(`## LOCATIONS (${(contacts.locations || []).length} total)
+${locations.shown.join('\n') || 'N/A'}${locations.omitted ? `\n(+${locations.omitted} additional locations not shown)` : ''}`);
 
-  /*
-    Results section:
-    Some trials have posted results on ClinicalTrials.gov.
-    Some trials do not.
-  */
+      if(!r){
+        sections.push('## RESULTS\nNo results have been posted to ClinicalTrials.gov for this trial. Only registry/protocol information is available.');
+        return sections.join('\n\n');
+      }
 
-  if(r){
-    hasResults = true;
+      const flow = r.participantFlowModule || {};
+      const flowGroups = (flow.groups || [])
+        .map(group => `- ${group.id || ''} ${group.title || 'Unnamed group'}: ${group.description || ''}`)
+        .join('\n');
 
-    const flow = r.participantFlowModule || {};
-    const flowGroups = (flow.groups||[])
-      .map(g => `- ${g.title}: ${g.description||''}`)
-      .join('\n');
+      const periods = (flow.periods || []).map(period => {
+        const milestones = (period.milestones || []).map(milestone => {
+          const values = (milestone.achievements || [])
+            .map(value => `${value.groupId}=${value.numSubjects}`)
+            .join(', ');
+          return `- ${milestone.type || 'Milestone'}: ${values || 'N/A'}`;
+        }).join('\n');
 
-    const periods = (flow.periods||[]).map(per => {
-      const milestones = (per.milestones||[]).map(m => {
-        const counts = (m.achievements||[]).map(a => `${a.groupId}=${a.numSubjects}`).join(', ');
-        return `  ${m.type}: ${counts}`;
-      }).join('\n');
+        return `Period: ${period.title || 'Unnamed period'}\n${milestones || 'N/A'}`;
+      }).join('\n\n');
 
-      return `Period "${per.title}":
-${milestones}`;
-    }).join('\n');
-
-    out.push(`## RESULTS: PARTICIPANT FLOW
+      sections.push(`## RESULTS: PARTICIPANT FLOW
 Groups:
 ${flowGroups || 'N/A'}
-${periods || ''}`);
 
-    const baseline = r.baselineCharacteristicsModule || {};
-    const baseMeasures = truncateList(baseline.measures||[], 8);
+${periods || 'N/A'}`);
 
-    const baseText = baseMeasures.shown.map(m => {
-      const cats = (m.classes?.[0]?.categories||[]).map(c => {
-        const vals = (c.measurements||[])
-          .map(v => `${v.groupId}=${v.value}`)
-          .join(', ');
-        return `${c.title||''}: ${vals}`;
-      }).join(' | ');
+      const baseline = r.baselineCharacteristicsModule || {};
+      const baselineMeasures = truncateList(baseline.measures || [], 12);
 
-      return `- ${m.title} (${m.unitOfMeasure||''}): ${cats}`;
-    }).join('\n');
+      const baselineText = baselineMeasures.shown.map(measure => {
+        const classes = (measure.classes || []).map(classItem => {
+          const categories = (classItem.categories || []).map(category => {
+            const measurements = (category.measurements || [])
+              .map(value => `${value.groupId}=${value.value}`)
+              .join(', ');
+            return `${category.title || 'Category'}: ${measurements || 'N/A'}`;
+          }).join(' | ');
+          return `${classItem.title ? `${classItem.title}: ` : ''}${categories}`;
+        }).join(' || ');
 
-    out.push(`## RESULTS: BASELINE CHARACTERISTICS
-${baseText || 'N/A'}${baseMeasures.omitted ? `\n(+${baseMeasures.omitted} more baseline measures not shown)` : ''}`);
+        return `- ${measure.title || 'Unnamed baseline measure'} (${measure.unitOfMeasure || ''}): ${classes || 'N/A'}`;
+      }).join('\n');
 
-    const resultGroups = r.outcomeMeasuresModule?.groups || [];
+      sections.push(`## RESULTS: BASELINE CHARACTERISTICS
+${baselineText || 'N/A'}${baselineMeasures.omitted ? `\n(+${baselineMeasures.omitted} additional baseline measures not shown)` : ''}`);
 
-    const resultGroupText = resultGroups
-      .map(g => `- ${g.id || 'N/A'}: ${g.title || 'Untitled group'}${g.description ? ' — ' + g.description : ''}`)
-      .join('\n');
-
-    out.push(`## RESULTS: OUTCOME GROUPS
-${resultGroupText || 'N/A'}`);
-
-    function cleanVal(v){
-      return v === undefined || v === null || v === '' ? 'N/A' : v;
-    }
-
-    function compactJson(value, maxLen = 1600){
-      /*
-        Converts part of the raw results JSON into text.
-        If it is too long, it gets shortened.
-      */
-      try{
-        const json = JSON.stringify(value, null, 2);
-        if(!json || json === 'null' || json === 'undefined') return '';
-        return json.length > maxLen ? json.slice(0, maxLen) + '\n... [truncated]' : json;
-      } catch(_){
-        return '';
-      }
-    }
-
-    function formatMeasurement(v){
-      const parts = [];
-
-      if(v.groupId) parts.push(`group ${v.groupId}`);
-      if(v.value !== undefined) parts.push(`value ${v.value}`);
-
-      if(v.lowerLimit !== undefined || v.upperLimit !== undefined){
-        parts.push(`range ${cleanVal(v.lowerLimit)} to ${cleanVal(v.upperLimit)}`);
+      function valueOrNA(value){
+        return value === undefined || value === null || value === '' ? 'N/A' : value;
       }
 
-      if(v.spread !== undefined) parts.push(`spread ${v.spread}`);
-      if(v.comment) parts.push(`comment: ${v.comment}`);
-
-      return parts.join('; ') || compactJson(v, 300);
-    }
-
-    function formatAnalysis(a){
-      /*
-        This extracts statistical analysis fields.
-
-        It checks for:
-        - groups compared
-        - statistical method
-        - p-value
-        - confidence interval
-        - effect estimate
-      */
-
-      const groupIds = Array.isArray(a.groupIds)
-        ? a.groupIds.join(', ')
-        : cleanVal(a.groupId);
-
-      const parts = [];
-
-      parts.push(`Groups compared: ${groupIds}`);
-      parts.push(`Method: ${cleanVal(a.statisticalMethod || a.method || a.testName)}`);
-
-      if(a.methodDescription){
-        parts.push(`Method description: ${a.methodDescription}`);
+      function compactJson(value, maxLength = 1500){
+        try{
+          const json = JSON.stringify(value, null, 2);
+          if(!json || json === 'null' || json === 'undefined') return '';
+          return json.length > maxLength ? `${json.slice(0, maxLength)}\n... [truncated]` : json;
+        }catch(_){
+          return '';
+        }
       }
 
-      if(a.paramType || a.paramValue){
-        parts.push(`Effect/estimate: ${cleanVal(a.paramValue || a.estimateValue)} ${a.paramType ? '(' + a.paramType + ')' : ''}`);
+      function formatMeasurement(measurement){
+        const pieces = [];
+        if(measurement.groupId) pieces.push(`group ${measurement.groupId}`);
+        if(measurement.value !== undefined) pieces.push(`value ${measurement.value}`);
+        if(measurement.lowerLimit !== undefined || measurement.upperLimit !== undefined){
+          pieces.push(`range ${valueOrNA(measurement.lowerLimit)} to ${valueOrNA(measurement.upperLimit)}`);
+        }
+        if(measurement.spread !== undefined) pieces.push(`spread ${measurement.spread}`);
+        if(measurement.comment) pieces.push(`comment: ${measurement.comment}`);
+        return pieces.join('; ') || compactJson(measurement, 400);
       }
 
-      if(a.dispersionType || a.dispersionValue){
-        parts.push(`Dispersion: ${cleanVal(a.dispersionValue)} ${a.dispersionType ? '(' + a.dispersionType + ')' : ''}`);
+      function formatAnalysis(analysis){
+        const pieces = [];
+        const groups = Array.isArray(analysis.groupIds)
+          ? analysis.groupIds.join(', ')
+          : valueOrNA(analysis.groupId);
+
+        pieces.push(`Groups compared: ${groups}`);
+        pieces.push(`Method: ${valueOrNA(analysis.statisticalMethod || analysis.method || analysis.testName)}`);
+
+        if(analysis.methodDescription) pieces.push(`Method description: ${analysis.methodDescription}`);
+        if(analysis.paramType || analysis.paramValue || analysis.estimateValue){
+          pieces.push(`Effect/estimate: ${valueOrNA(analysis.paramValue || analysis.estimateValue)} ${analysis.paramType ? `(${analysis.paramType})` : ''}`);
+        }
+        if(analysis.pValue !== undefined || analysis.pValueRange || analysis.pValueComment){
+          pieces.push(`P-value: ${valueOrNA(analysis.pValue ?? analysis.pValueRange)}${analysis.pValueComment ? ` — ${analysis.pValueComment}` : ''}`);
+        }
+        if(analysis.ciPctValue || analysis.ciLowerLimit !== undefined || analysis.ciUpperLimit !== undefined){
+          pieces.push(`Confidence interval: ${analysis.ciPctValue ? `${analysis.ciPctValue}% ` : ''}${valueOrNA(analysis.ciLowerLimit)} to ${valueOrNA(analysis.ciUpperLimit)}`);
+        }
+        if(analysis.nonInferiorityType) pieces.push(`Non-inferiority/superiority type: ${analysis.nonInferiorityType}`);
+        if(analysis.statisticalComment) pieces.push(`Statistical comment: ${analysis.statisticalComment}`);
+
+        return pieces.join('; ');
       }
 
-      if(a.pValue !== undefined || a.pValueRange || a.pValueComment){
-        parts.push(`P-value: ${cleanVal(a.pValue || a.pValueRange)}${a.pValueComment ? ' — ' + a.pValueComment : ''}`);
-      }
+      const resultGroups = r.outcomeMeasuresModule?.groups || [];
+      const resultGroupsText = resultGroups
+        .map(group => `- ${group.id || 'N/A'}: ${group.title || 'Unnamed group'}${group.description ? ` — ${group.description}` : ''}`)
+        .join('\n');
 
-      if(a.ciPctValue || a.ciLowerLimit || a.ciUpperLimit || a.ciLowerLimitComment || a.ciUpperLimitComment){
-        parts.push(`Confidence interval: ${a.ciPctValue ? a.ciPctValue + '% ' : ''}${cleanVal(a.ciLowerLimit)} to ${cleanVal(a.ciUpperLimit)}${a.ciLowerLimitComment ? ' — lower comment: ' + a.ciLowerLimitComment : ''}${a.ciUpperLimitComment ? ' — upper comment: ' + a.ciUpperLimitComment : ''}`);
-      }
+      sections.push(`## RESULTS: OUTCOME GROUPS
+${resultGroupsText || 'N/A'}`);
 
-      if(a.nonInferiorityType){
-        parts.push(`Non-inferiority/superiority type: ${a.nonInferiorityType}`);
-      }
+      const allOutcomeMeasures = r.outcomeMeasuresModule?.outcomeMeasures || [];
+      const outcomeMeasures = truncateList(allOutcomeMeasures, 60);
+      let hasStatisticalAnalysis = false;
 
-      if(a.statisticalComment){
-        parts.push(`Statistical comment: ${a.statisticalComment}`);
-      }
+      const outcomeText = outcomeMeasures.shown.map((measure, index) => {
+        const classes = (measure.classes || []).map(classItem => {
+          const categories = (classItem.categories || []).map(category => {
+            const measurements = (category.measurements || []).map(formatMeasurement).join(', ');
+            return `${category.title || 'Category'}: ${measurements || 'N/A'}`;
+          }).join(' | ');
 
-      if(a.estimateComment){
-        parts.push(`Estimate comment: ${a.estimateComment}`);
-      }
+          return `${classItem.title ? `${classItem.title}: ` : ''}${categories || 'N/A'}`;
+        }).join(' || ');
 
-      return parts.filter(Boolean).join('; ');
-    }
+        const analyses = measure.analyses || [];
+        if(analyses.length) hasStatisticalAnalysis = true;
 
-    let anyStatisticalAnalysis = false;
+        const analysisText = analyses.length
+          ? analyses.map((analysis, analysisIndex) => `Analysis ${analysisIndex + 1}: ${formatAnalysis(analysis)}`).join('\n')
+          : 'No p-values, confidence intervals, statistical methods, or significance testing were listed for this outcome.';
 
-    const allOutcomeMeasures = r.outcomeMeasuresModule?.outcomeMeasures || [];
-    const outMeasures = truncateList(allOutcomeMeasures, 60);
-
-    const outText = outMeasures.shown.map((m, index) => {
-      const classes = (m.classes || []).map(cl => {
-        const cats = (cl.categories || []).map(c => {
-          const vals = (c.measurements || [])
-            .map(formatMeasurement)
-            .join(', ');
-
-          return `${c.title || 'Category'}: ${vals || 'N/A'}`;
-        }).join(' | ');
-
-        return `${cl.title ? cl.title + ': ' : ''}${cats || 'N/A'}`;
-      }).join(' || ');
-
-      const analyses = m.analyses || [];
-
-      if(analyses.length > 0){
-        anyStatisticalAnalysis = true;
-      }
-
-      const analysisText = analyses.length
-        ? analyses.map((a, i) => `Analysis ${i + 1}: ${formatAnalysis(a)}`).join('\n  ')
-        : 'No p-values, confidence intervals, statistical methods, or significance testing were listed for this outcome in the ClinicalTrials.gov analysis fields.';
-
-      const denominatorText = compactJson(m.denoms || m.denomsUnits || m.denominatorUnits || '', 700);
-
-      return `Outcome ${index + 1}: [${m.type || 'Outcome'}] ${m.title || 'Untitled outcome'}
-Description: ${m.description || 'N/A'}
-Time frame: ${m.timeFrame || 'N/A'}
-Unit of measure: ${m.unitOfMeasure || 'N/A'}
-Population description: ${m.populationDescription || 'N/A'}
+        return `Outcome ${index + 1}: [${measure.type || 'Outcome'}] ${measure.title || 'Unnamed outcome'}
+Description: ${measure.description || 'N/A'}
+Time frame: ${measure.timeFrame || 'N/A'}
+Unit: ${measure.unitOfMeasure || 'N/A'}
+Population: ${measure.populationDescription || 'N/A'}
 Results: ${classes || 'N/A'}
-Denominators: ${denominatorText || 'N/A'}
 Statistical analysis: ${analysisText}`;
-    }).join('\n\n');
+      }).join('\n\n');
 
-    out.push(`## RESULTS: OUTCOME MEASURES AND STATISTICAL ANALYSES
-${outText || 'N/A'}
-Overall statistical analysis availability: ${anyStatisticalAnalysis ? 'At least one outcome includes statistical analysis fields in ClinicalTrials.gov.' : 'No p-values, confidence intervals, statistical methods, or significance testing were found in the ClinicalTrials.gov outcome analysis fields included in this record.'}${outMeasures.omitted ? `\n(+${outMeasures.omitted} more outcome measures not shown because this trial has many outcomes — ask about a specific outcome name if needed)` : ''}`);
+      sections.push(`## RESULTS: OUTCOME MEASURES AND STATISTICAL ANALYSES
+${outcomeText || 'N/A'}
+Overall statistical-analysis availability: ${hasStatisticalAnalysis ? 'At least one outcome includes statistical analysis fields.' : 'No statistical analysis fields were found in the included outcome records.'}${outcomeMeasures.omitted ? `\n(+${outcomeMeasures.omitted} additional outcome measures not shown)` : ''}`);
 
-    const rawResultsJson = compactJson(r, 50000);
+      const adverse = r.adverseEventsModule || {};
+      const serious = truncateList(adverse.seriousEvents || [], 15);
+      const other = truncateList(adverse.otherEvents || [], 15);
 
-    out.push(`## RAW CLINICALTRIALS.GOV RESULTS JSON EXCERPT
-This excerpt helps the assistant answer less common results questions beyond the manually summarized fields.
-If something is not in this JSON excerpt, say it is not available in the provided registry data.
-${rawResultsJson || 'N/A'}`);
+      const formatEvent = event => `- ${event.term || 'Unnamed event'} (${event.organSystem || ''}): ${(event.stats || []).map(stat => `${stat.groupId}=${stat.numAffected}/${stat.numAtRisk}`).join(', ')}`;
 
-    const ae = r.adverseEventsModule || {};
-    const seriousEvents = truncateList(ae.seriousEvents||[], 12);
-    const otherEvents = truncateList(ae.otherEvents||[], 12);
-
-    const fmtEvent = e => `- ${e.term} (${e.organSystem||''}): ${(e.stats||[])
-      .map(s=>`${s.groupId}=${s.numAffected}/${s.numAtRisk}`)
-      .join(', ')}`;
-
-    out.push(`## RESULTS: ADVERSE EVENTS
-Frequency threshold: ${ae.frequencyThreshold||'N/A'}
-
+      sections.push(`## RESULTS: ADVERSE EVENTS
+Frequency threshold: ${adverse.frequencyThreshold || 'N/A'}
 Serious events:
-${seriousEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${seriousEvents.omitted ? `\n(+${seriousEvents.omitted} more serious events not shown)` : ''}
+${serious.shown.map(formatEvent).join('\n') || 'N/A'}${serious.omitted ? `\n(+${serious.omitted} more serious events not shown)` : ''}
 
 Other/non-serious events:
-${otherEvents.shown.map(fmtEvent).join('\n') || 'N/A'}${otherEvents.omitted ? `\n(+${otherEvents.omitted} more not shown)` : ''}
+${other.shown.map(formatEvent).join('\n') || 'N/A'}${other.omitted ? `\n(+${other.omitted} more events not shown)` : ''}`);
 
-All-cause mortality/deaths and group flow: ${JSON.stringify(ae.eventGroups||[]).slice(0,600)}`);
+      // Keep a capped raw excerpt for uncommon result fields not manually summarized.
+      sections.push(`## RAW CLINICALTRIALS.GOV RESULTS JSON EXCERPT
+${compactJson(r, 35000) || 'N/A'}`);
 
-  } else {
-    hasResults = false;
-
-    out.push(`## RESULTS
-No results have been posted to ClinicalTrials.gov for this trial. Only registry/protocol information is available.`);
-  }
-
-  return out.join('\n\n');
-}
-
-// ---------- display the selected trial card ----------
-function renderLedger(study){
-  /*
-    This fills in the left-side trial summary card.
-
-    The visible Literature box is removed.
-    PubMed/open-access literature still loads in the background.
-  */
-
-  const id = study.protocolSection?.identificationModule || {};
-  const status = study.protocolSection?.statusModule || {};
-  const sponsor = study.protocolSection?.sponsorCollaboratorsModule || {};
-  const design = study.protocolSection?.designModule || {};
-  const cond = study.protocolSection?.conditionsModule || {};
-
-  els.ledgerCard.innerHTML = `
-    <div class="nct">${esc(id.nctId||'')}</div>
-    <h2>${esc(id.briefTitle||'Untitled trial')}</h2>
-
-    <div class="ledger-field">
-      <span class="label">Status</span>
-      ${esc(status.overallStatus||'N/A')}
-    </div>
-
-    <div class="ledger-field">
-      <span class="label">Phase</span>
-      ${esc((design.phases||[]).join(', ')||'N/A')}
-    </div>
-
-    <div class="ledger-field">
-      <span class="label">Sponsor</span>
-      ${esc(sponsor.leadSponsor?.name||'N/A')}
-    </div>
-
-    <div class="ledger-field">
-      <span class="label">Conditions</span>
-      ${esc((cond.conditions||[]).join(', ')||'N/A')}
-    </div>
-
-    <div class="ledger-field">
-      <span class="label">Enrollment</span>
-      ${esc(design.enrollmentInfo?.count||'N/A')}
-    </div>
-
-    <div class="results-flag ${hasResults ? 'has-results' : 'no-results'}">
-      ${hasResults ? '✓ Results posted' : '✕ No results posted yet'}
-    </div>
-
-    <span class="change-trial" id="changeTrialBtn">← Search a different trial</span>
-  `;
-
-  document.getElementById('changeTrialBtn').addEventListener('click', resetToSearch);
-}
-
-function renderSuggestions(){
-  /*
-    These are the clickable suggested questions shown before the user chats.
-  */
-
-  const base = [
-    'Summarize the study design in plain terms',
-    'What are the key inclusion/exclusion criteria?',
-    'What were the primary outcome results?',
-    'What adverse events were most common?',
-    'Were p-values or confidence intervals reported?'
-  ];
-
-  els.suggestionChips.innerHTML = '';
-
-  base.forEach(s => {
-    const chip = document.createElement('div');
-    chip.className = 'suggestion-chip';
-    chip.textContent = s;
-
-    chip.addEventListener('click', () => {
-      els.chatInput.value = s;
-      sendMessage();
-    });
-
-    els.suggestionChips.appendChild(chip);
-  });
-}
-
-function getTrialIdentifiers(study){
-  /*
-    Gets the NCT ID and titles.
-    The backend uses these to search PubMed/open-access literature.
-  */
-
-  const id = study.protocolSection?.identificationModule || {};
-
-  return {
-    nctId: id.nctId || '',
-    briefTitle: id.briefTitle || '',
-    officialTitle: id.officialTitle || ''
-  };
-}
-
-function renderLiteratureStatus(html){
-  /*
-    There is no visible Literature box now.
-
-    So this function safely does nothing unless an element called
-    literatureStatus exists.
-  */
-
-  const el = document.getElementById('literatureStatus');
-
-  if(el){
-    el.innerHTML = html;
-  }
-}
-
-function renderLiteratureArticles(articles){
-  /*
-    This function is kept because literature can still load in the background.
-    Since the visible Literature box is removed, the user usually won't see this.
-  */
-
-  if(!articles || articles.length === 0){
-    renderLiteratureStatus('No PubMed or open-access article matches were found automatically. The chatbot will use the ClinicalTrials.gov record only.');
-    return;
-  }
-
-  const shown = articles.slice(0, 5).map(a => `
-    <div class="literature-item">
-      <div>${esc(a.title || 'Untitled article')}</div>
-      <div class="literature-meta">
-        ${esc([a.sourceLabel, a.pmid ? 'PMID ' + a.pmid : '', a.pmcid || '', a.year || '', a.openAccessFullTextFound ? 'open-access full text found' : 'abstract/metadata only'].filter(Boolean).join(' · '))}
-      </div>
-    </div>
-  `).join('');
-
-  renderLiteratureStatus(`Found ${articles.length} literature source${articles.length === 1 ? '' : 's'}. ${shown}`);
-}
-
-async function loadRelatedLiterature(study){
-  /*
-    This calls the backend route /api/literature.
-
-    This happens in the background.
-
-    It can add PubMed abstracts or legal open-access full text
-    into literatureContext.
-
-    Claude can then use that extra evidence if available.
-  */
-
-  literatureContext = '';
-  literatureArticles = [];
-
-  renderLiteratureStatus('<span class="spinner"></span>Searching PubMed and legal open-access full text…');
-
-  try{
-    const ids = getTrialIdentifiers(study);
-
-    const res = await fetch('/api/literature', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ids)
-    });
-
-    const data = await res.json();
-
-    if(!res.ok || data.error){
-      throw new Error(data.error?.message || 'literature search failed');
+      return sections.join('\n\n');
     }
 
-    literatureContext = data.context || '';
-    literatureArticles = data.articles || [];
+    /* ---------------------------------------------------------------------- */
+    /* Related literature                                                     */
+    /* ---------------------------------------------------------------------- */
 
-    renderLiteratureArticles(literatureArticles);
-  } catch(err){
-    literatureContext = '';
-    literatureArticles = [];
+    async function fetchLiterature(study){
+      const identifiers = getTrialIdentifiers(study);
+      const cacheKey = identifiers.nctId || identifiers.briefTitle;
 
-    renderLiteratureStatus(`Literature search failed: ${esc(err.message)}. The chatbot will still use the ClinicalTrials.gov record.`);
-  }
-}
+      if(literatureCache.has(cacheKey)){
+        return literatureCache.get(cacheKey);
+      }
 
-function resetToSearch(){
-  /*
-    Resets the app back to the search screen.
-  */
+      const promise = fetch('/api/literature', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(identifiers)
+      }).then(async response => {
+        const data = await response.json();
+        if(!response.ok || data.error){
+          throw new Error(data.error?.message || 'Related literature search failed.');
+        }
+        return {
+          articles:data.articles || [],
+          context:data.context || ''
+        };
+      });
 
-  currentTrial = null;
-  trialContext = '';
-  literatureContext = '';
-  literatureArticles = [];
-  chatHistory = [];
-  hasResults = false;
+      literatureCache.set(cacheKey, promise);
 
-  els.mainLayout.style.display = 'none';
-  document.getElementById('searchBlock').style.display = 'block';
-  els.chatScroll.innerHTML = '';
-  els.searchInput.value = '';
-  els.resultsList.innerHTML = '';
-}
+      try{
+        return await promise;
+      }catch(error){
+        literatureCache.delete(cacheKey);
+        throw error;
+      }
+    }
 
-// ---------- load one trial ----------
-async function loadTrial(nctId){
-  /*
-    This runs when the user clicks a search result
-    or enters an exact NCT ID.
+    function renderLiteratureSection(container, label, study, articles, loading = false, error = ''){
+      if(!study){
+        container.innerHTML = '';
+        return;
+      }
 
-    Steps:
-    1) Fetch full trial JSON.
-    2) Convert JSON into trialContext notes.
-    3) Show the trial summary card.
-    4) Show the chat interface.
-    5) Start literature search in the background.
-  */
+      const info = trialInfo(study);
 
-  els.searchError.innerHTML = '';
-  els.resultsList.innerHTML = '<div class="hint"><span class="spinner"></span>Loading trial record…</div>';
+      if(loading){
+        container.innerHTML = `
+          <div class="meta-label" style="margin-bottom:7px;">${esc(label)} · ${esc(info.nctId)}</div>
+          <div class="hint"><span class="spinner"></span>Searching related publications...</div>
+        `;
+        return;
+      }
 
-  try{
-    const study = await fetchTrialById(nctId);
+      if(error){
+        container.innerHTML = `
+          <div class="meta-label" style="margin-bottom:7px;">${esc(label)} · ${esc(info.nctId)}</div>
+          <div class="error-box">${esc(error)}</div>
+        `;
+        return;
+      }
 
-    currentTrial = study;
-    trialContext = buildContext(study);
-    chatHistory = [];
+      if(!articles.length){
+        container.innerHTML = `
+          <div class="meta-label" style="margin-bottom:7px;">${esc(label)} · ${esc(info.nctId)}</div>
+          <div class="notice-box">No related PubMed or Europe PMC publication was found automatically.</div>
+        `;
+        return;
+      }
 
-    renderLedger(study);
+      const cards = articles.slice(0, 5).map((article, index) => {
+        const url = safeUrl(article.url);
+        const abstractId = `${label.replace(/\s+/g,'-').toLowerCase()}-abstract-${index}`;
 
-    document.getElementById('searchBlock').style.display = 'none';
-    els.mainLayout.style.display = 'grid';
+        return `
+          <article class="literature-card">
+            <h4>${esc(article.title || 'Untitled article')}</h4>
+            <div class="literature-meta">${esc([article.journal, article.year, article.pmid ? `PMID ${article.pmid}` : '', article.pmcid || ''].filter(Boolean).join(' · '))}</div>
 
-    els.chatScroll.innerHTML = '';
-    els.emptyState.style.display = 'flex';
-    els.chatScroll.appendChild(els.emptyState);
+            <div class="literature-badges">
+              <span class="tiny-badge ${article.openAccessFullTextFound ? '' : 'abstract-only'}">
+                ${article.openAccessFullTextFound ? 'Open-access text found' : 'Abstract/metadata'}
+              </span>
+            </div>
 
-    renderSuggestions();
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              ${article.abstract ? `<button class="btn secondary small literature-toggle" data-target="${abstractId}" type="button">Show abstract</button>` : ''}
+              ${url ? `<a class="article-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : ''}
+            </div>
 
-    // Runs in background. Not shown on the left card.
-    loadRelatedLiterature(study);
+            <div class="literature-abstract" id="${abstractId}">${esc(article.abstract || 'No abstract was returned.')}</div>
+          </article>
+        `;
+      }).join('');
 
-  } catch(err){
-    els.resultsList.innerHTML = '';
-    els.searchError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-  }
-}
+      container.innerHTML = `
+        <div class="meta-label" style="margin:12px 0 7px;">${esc(label)} · ${esc(info.nctId)}</div>
+        <div class="literature-list">${cards}</div>
+      `;
 
-// ---------- search flow ----------
-async function handleSearch(){
-  /*
-    This runs when the user clicks Search or presses Enter.
+      container.querySelectorAll('.literature-toggle').forEach(button => {
+        button.addEventListener('click', () => {
+          const target = document.getElementById(button.dataset.target);
+          const isOpen = target.classList.toggle('open');
+          button.textContent = isOpen ? 'Hide abstract' : 'Show abstract';
+        });
+      });
+    }
 
-    If the input is an exact NCT ID:
-    - load that trial directly.
+    async function loadPrimaryLiterature(){
+      renderLiteratureSection(els.primaryLiteratureSection, 'Trial 1 literature', primaryTrial, [], true);
 
-    If it is a keyword:
-    - search ClinicalTrials.gov and show matching trial cards.
-  */
+      primaryLiteraturePromise = fetchLiterature(primaryTrial)
+        .then(data => {
+          primaryArticles = data.articles;
+          primaryLiteratureContext = data.context;
+          renderLiteratureSection(els.primaryLiteratureSection, 'Trial 1 literature', primaryTrial, primaryArticles);
+        })
+        .catch(error => {
+          primaryArticles = [];
+          primaryLiteratureContext = '';
+          renderLiteratureSection(els.primaryLiteratureSection, 'Trial 1 literature', primaryTrial, [], false, error.message);
+        });
 
-  const term = els.searchInput.value.trim();
+      return primaryLiteraturePromise;
+    }
 
-  if(!term) return;
+    async function loadComparisonLiterature(){
+      if(!comparisonTrial){
+        comparisonArticles = [];
+        comparisonLiteratureContext = '';
+        els.comparisonLiteratureSection.innerHTML = '';
+        return;
+      }
 
-  els.searchError.innerHTML = '';
-  els.resultsList.innerHTML = '<div class="hint"><span class="spinner"></span>Searching ClinicalTrials.gov and loading matching trials…</div>';
+      renderLiteratureSection(els.comparisonLiteratureSection, 'Trial 2 literature', comparisonTrial, [], true);
 
-  if(isNctId(term)){
-    await loadTrial(term);
-    return;
-  }
+      comparisonLiteraturePromise = fetchLiterature(comparisonTrial)
+        .then(data => {
+          comparisonArticles = data.articles;
+          comparisonLiteratureContext = data.context;
+          renderLiteratureSection(els.comparisonLiteratureSection, 'Trial 2 literature', comparisonTrial, comparisonArticles);
+        })
+        .catch(error => {
+          comparisonArticles = [];
+          comparisonLiteratureContext = '';
+          renderLiteratureSection(els.comparisonLiteratureSection, 'Trial 2 literature', comparisonTrial, [], false, error.message);
+        });
 
-  try{
-    const studies = await searchTrials(term);
-    renderResults(studies);
-  } catch(err){
-    els.resultsList.innerHTML = '';
-    els.searchError.innerHTML = `<div class="error-box">${esc(err.message)}</div>`;
-  }
-}
+      return comparisonLiteraturePromise;
+    }
 
-els.searchBtn.addEventListener('click', handleSearch);
+    /* ---------------------------------------------------------------------- */
+    /* Selected trial cards                                                   */
+    /* ---------------------------------------------------------------------- */
 
-els.searchInput.addEventListener('keydown', e => {
-  if(e.key === 'Enter'){
-    handleSearch();
-  }
-});
+    function renderTrialCard(container, study, number){
+      const info = trialInfo(study);
+      const isComparison = number === 2;
 
-// ---------- chat flow ----------
-function appendMessage(role, text, sources){
-  /*
-    Adds a message bubble to the chat.
+      container.innerHTML = `
+        <div class="trial-number">Trial ${number}</div>
+        <h2>${esc(info.briefTitle)}</h2>
 
-    role:
-    - "user"
-    - "assistant"
-  */
+        <div class="trial-field"><strong>NCT ID</strong>${esc(info.nctId)}</div>
+        <div class="trial-field"><strong>Status</strong>${esc(cleanLabel(info.status))}</div>
+        <div class="trial-field"><strong>Phase</strong>${esc(info.phase)}</div>
+        <div class="trial-field"><strong>Sponsor</strong>${esc(info.sponsor)}</div>
+        <div class="trial-field"><strong>Conditions</strong>${esc(info.conditions.join(', ') || 'N/A')}</div>
+        <div class="trial-field"><strong>Enrollment</strong>${esc(info.enrollment)}</div>
 
-  if(els.emptyState.parentNode){
-    els.emptyState.remove();
-  }
+        <div class="results-pill ${info.hasResults ? 'posted' : 'registry'}">
+          ${info.hasResults ? '✓ Results posted' : 'Registry record only'}
+        </div>
 
-  const wrap = document.createElement('div');
-  wrap.className = `msg ${role}`;
+        <div class="trial-card-actions">
+          ${isComparison
+            ? '<button class="btn danger small" id="removeComparisonBtn" type="button">Remove Trial 2</button>'
+            : '<button class="btn secondary small" id="changePrimaryBtn" type="button">Choose a different Trial 1</button>'}
+        </div>
+      `;
 
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  bubble.textContent = text;
+      if(isComparison){
+        container.querySelector('#removeComparisonBtn').addEventListener('click', removeComparisonTrial);
+      }else{
+        container.querySelector('#changePrimaryBtn').addEventListener('click', resetToSearch);
+      }
+    }
 
-  wrap.appendChild(bubble);
+    function updateModeUI(){
+      const comparing = Boolean(comparisonTrial);
 
-  if(sources && sources.length){
-    const sl = document.createElement('div');
-    sl.className = 'sources-line';
+      els.modeBadge.textContent = comparing ? 'Comparison mode' : 'Single trial';
+      els.modeBadge.classList.toggle('compare', comparing);
+      els.chatHeaderTitle.textContent = comparing ? 'Compare Trial 1 and Trial 2' : 'Ask about Trial 1';
+      els.emptyTitle.textContent = comparing ? 'Compare these two trials' : 'Ask this trial anything';
+      els.emptyCopy.textContent = comparing
+        ? 'Ask one question and the assistant will answer using a side-by-side comparison table based on both trial records and their related literature.'
+        : 'The assistant uses the selected ClinicalTrials.gov record and any related PubMed or legal open-access evidence found automatically.';
 
-    sources.forEach(s => {
-      const chip = document.createElement('span');
-      chip.className = 'source-chip';
-      chip.textContent = '§ ' + s;
-      sl.appendChild(chip);
-    });
+      renderSuggestions();
+    }
 
-    wrap.appendChild(sl);
-  }
+    /* ---------------------------------------------------------------------- */
+    /* Load Trial 1 and Trial 2                                               */
+    /* ---------------------------------------------------------------------- */
 
-  els.chatScroll.appendChild(wrap);
-  els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
+    async function loadPrimaryTrial(nctId){
+      clearError(els.searchError);
+      els.resultsArea.innerHTML = '<div class="notice-box"><span class="spinner"></span>Loading the full trial record...</div>';
 
-  return wrap;
-}
+      try{
+        const study = await fetchTrialById(nctId);
 
-function parseSources(text){
-  /*
-    Claude is told to end with:
-    Sources: X, Y
+        primaryTrial = study;
+        primaryTrialContext = buildTrialContext(study);
 
-    This function separates the actual answer from the source labels.
-  */
+        comparisonTrial = null;
+        comparisonTrialContext = '';
+        comparisonArticles = [];
+        comparisonLiteratureContext = '';
+        comparisonLiteraturePromise = null;
 
-  const match = text.match(/Sources?:\s*(.+)\s*$/i);
+        chatHistory = [];
 
-  if(!match){
-    return {
-      body: text.trim(),
-      sources: []
-    };
-  }
+        renderTrialCard(els.primaryTrialCard, primaryTrial, 1);
+        els.comparisonTrialCard.style.display = 'none';
+        els.comparisonLiteratureSection.innerHTML = '';
+        els.compareSearchInput.value = '';
+        els.compareSearchResults.innerHTML = '';
+        clearError(els.compareSearchError);
 
-  const body = text.slice(0, match.index).trim();
+        els.searchBlock.style.display = 'none';
+        els.mainLayout.style.display = 'grid';
 
-  const sources = match[1]
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
+        resetChatDisplay();
+        updateModeUI();
+        loadPrimaryLiterature();
+      }catch(error){
+        els.resultsArea.innerHTML = '';
+        showError(els.searchError, error.message);
+      }
+    }
 
-  return { body, sources };
-}
+    async function loadComparisonTrial(nctId){
+      clearError(els.compareSearchError);
 
-async function sendMessage(){
-  /*
-    This runs when the user asks the chatbot a question.
+      if(!primaryTrial){
+        showError(els.compareSearchError, 'Choose Trial 1 before adding a comparison trial.');
+        return;
+      }
 
-    Very important:
-    The frontend does not call Claude directly.
-    It sends the request to /api/chat.
+      const primaryId = trialInfo(primaryTrial).nctId;
+      if(String(nctId).toUpperCase() === String(primaryId).toUpperCase()){
+        showError(els.compareSearchError, 'Trial 2 must be different from Trial 1.');
+        return;
+      }
 
-    Then server.js calls Claude securely using the API key.
-  */
+      els.compareSearchResults.innerHTML = '<div class="hint"><span class="spinner"></span>Loading Trial 2...</div>';
 
-  const text = els.chatInput.value.trim();
+      try{
+        const study = await fetchTrialById(nctId);
 
-  if(!text || !currentTrial) return;
+        comparisonTrial = study;
+        comparisonTrialContext = buildTrialContext(study);
+        chatHistory = [];
 
-  els.chatInput.value = '';
+        renderTrialCard(els.comparisonTrialCard, comparisonTrial, 2);
+        els.comparisonTrialCard.style.display = 'block';
+        els.compareSearchResults.innerHTML = '';
+        els.compareSearchInput.value = '';
 
-  appendMessage('user', text);
+        resetChatDisplay();
+        updateModeUI();
+        loadComparisonLiterature();
+      }catch(error){
+        els.compareSearchResults.innerHTML = '';
+        showError(els.compareSearchError, error.message);
+      }
+    }
 
-  chatHistory.push({
-    role: 'user',
-    content: text
-  });
+    function removeComparisonTrial(){
+      comparisonTrial = null;
+      comparisonTrialContext = '';
+      comparisonArticles = [];
+      comparisonLiteratureContext = '';
+      comparisonLiteraturePromise = null;
+      chatHistory = [];
 
-  const typingWrap = document.createElement('div');
-  typingWrap.className = 'msg assistant';
-  typingWrap.innerHTML = `<div class="bubble typing"><span class="spinner"></span>Reading the trial record…</div>`;
+      els.comparisonTrialCard.style.display = 'none';
+      els.comparisonTrialCard.innerHTML = '';
+      els.comparisonLiteratureSection.innerHTML = '';
+      els.compareSearchInput.value = '';
+      els.compareSearchResults.innerHTML = '';
+      clearError(els.compareSearchError);
 
-  els.chatScroll.appendChild(typingWrap);
-  els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
-  els.sendBtn.disabled = true;
+      resetChatDisplay();
+      updateModeUI();
+    }
 
-  const systemPrompt = `You are a clinical evidence assistant. Answer questions using ONLY the evidence data provided below — never outside knowledge, never speculation about this specific trial.
+    /* ---------------------------------------------------------------------- */
+    /* Find a comparison trial                                                */
+    /* ---------------------------------------------------------------------- */
+
+    async function handleComparisonSearch(){
+      const term = els.compareSearchInput.value.trim();
+      if(!term) return;
+
+      clearError(els.compareSearchError);
+      els.compareSearchResults.innerHTML = '<div class="hint"><span class="spinner"></span>Searching for Trial 2...</div>';
+
+      if(isNctId(term)){
+        await loadComparisonTrial(term);
+        return;
+      }
+
+      try{
+        const studies = await searchTrials(term, 50);
+        renderComparisonCandidates(studies.slice(0, 12));
+      }catch(error){
+        els.compareSearchResults.innerHTML = '';
+        showError(els.compareSearchError, error.message);
+      }
+    }
+
+    function renderComparisonCandidates(studies){
+      els.compareSearchResults.innerHTML = '';
+
+      const primaryId = trialInfo(primaryTrial).nctId;
+      const candidates = studies.filter(study => trialInfo(study).nctId !== primaryId);
+
+      if(!candidates.length){
+        els.compareSearchResults.innerHTML = '<div class="notice-box">No different comparison trials were found.</div>';
+        return;
+      }
+
+      candidates.forEach(study => {
+        const info = trialInfo(study);
+        const item = document.createElement('div');
+        item.className = 'compare-candidate';
+
+        item.innerHTML = `
+          <div class="compare-candidate-title">${esc(info.briefTitle)}</div>
+          <div class="compare-candidate-bottom">
+            <span>${esc(info.nctId)} · ${info.hasResults ? 'Results posted' : 'Registry only'}</span>
+            <button class="btn small" type="button">Add</button>
+          </div>
+        `;
+
+        item.querySelector('button').addEventListener('click', () => loadComparisonTrial(info.nctId));
+        els.compareSearchResults.appendChild(item);
+      });
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Search-page behavior                                                   */
+    /* ---------------------------------------------------------------------- */
+
+    async function handlePrimarySearch(){
+      const term = els.searchInput.value.trim();
+      if(!term) return;
+
+      clearError(els.searchError);
+      els.resultsArea.innerHTML = '<div class="notice-box"><span class="spinner"></span>Searching ClinicalTrials.gov...</div>';
+      els.searchBtn.disabled = true;
+
+      try{
+        if(isNctId(term)){
+          await loadPrimaryTrial(term);
+          return;
+        }
+
+        const studies = await searchTrials(term);
+        renderSearchResults(studies);
+      }catch(error){
+        els.resultsArea.innerHTML = '';
+        showError(els.searchError, error.message);
+      }finally{
+        els.searchBtn.disabled = false;
+      }
+    }
+
+    function resetToSearch(){
+      primaryTrial = null;
+      comparisonTrial = null;
+      primaryTrialContext = '';
+      comparisonTrialContext = '';
+      primaryLiteratureContext = '';
+      comparisonLiteratureContext = '';
+      primaryArticles = [];
+      comparisonArticles = [];
+      primaryLiteraturePromise = null;
+      comparisonLiteraturePromise = null;
+      chatHistory = [];
+
+      els.mainLayout.style.display = 'none';
+      els.searchBlock.style.display = 'block';
+      els.searchInput.value = '';
+      els.resultsArea.innerHTML = '';
+      clearError(els.searchError);
+      resetChatDisplay();
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Chat suggestions                                                       */
+    /* ---------------------------------------------------------------------- */
+
+    function renderSuggestions(){
+      const comparing = Boolean(comparisonTrial);
+
+      const suggestions = comparing
+        ? [
+            'Compare the study designs and patient populations',
+            'Compare the primary outcomes and posted results',
+            'Which trial reported stronger statistical evidence?',
+            'Compare adverse events and safety findings',
+            'Compare enrollment, eligibility, and follow-up time'
+          ]
+        : [
+            'Summarize the study design in plain terms',
+            'What are the key inclusion and exclusion criteria?',
+            'What were the primary outcome results?',
+            'What adverse events were most common?',
+            'Were p-values or confidence intervals reported?'
+          ];
+
+      els.suggestionChips.innerHTML = '';
+
+      suggestions.forEach(text => {
+        const chip = document.createElement('div');
+        chip.className = 'suggestion-chip';
+        chip.textContent = text;
+        chip.addEventListener('click', () => {
+          els.chatInput.value = text;
+          sendMessage();
+        });
+        els.suggestionChips.appendChild(chip);
+      });
+    }
+
+    function resetChatDisplay(){
+      els.chatScroll.innerHTML = '';
+      els.chatScroll.appendChild(els.emptyState);
+      els.emptyState.style.display = 'block';
+      els.chatInput.value = '';
+      renderSuggestions();
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Safe, small Markdown renderer                                          */
+    /* ---------------------------------------------------------------------- */
+
+    function inlineMarkdown(value){
+      return esc(value)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
+    }
+
+    function splitTableRow(line){
+      return line
+        .trim()
+        .replace(/^\|/,'')
+        .replace(/\|$/,'')
+        .split('|')
+        .map(cell => cell.trim());
+    }
+
+    function isTableDivider(line){
+      const cells = splitTableRow(line);
+      return cells.length >= 2 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
+    }
+
+    function renderAssistantMarkdown(text){
+      const lines = String(text || '').split('\n');
+      const html = [];
+      let index = 0;
+
+      while(index < lines.length){
+        const line = lines[index];
+        const next = lines[index + 1] || '';
+
+        // Markdown comparison table: header line followed by |---|---|.
+        if(line.includes('|') && isTableDivider(next)){
+          const headers = splitTableRow(line);
+          const rows = [];
+          index += 2;
+
+          while(index < lines.length && lines[index].includes('|') && lines[index].trim()){
+            rows.push(splitTableRow(lines[index]));
+            index += 1;
+          }
+
+          html.push(`
+            <div class="comparison-table-wrap">
+              <table class="comparison-table">
+                <thead><tr>${headers.map(cell => `<th>${inlineMarkdown(cell)}</th>`).join('')}</tr></thead>
+                <tbody>
+                  ${rows.map(row => `<tr>${headers.map((_, cellIndex) => `<td>${inlineMarkdown(row[cellIndex] || '')}</td>`).join('')}</tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          `);
+          continue;
+        }
+
+        if(/^###\s+/.test(line)){
+          html.push(`<h3>${inlineMarkdown(line.replace(/^###\s+/,''))}</h3>`);
+          index += 1;
+          continue;
+        }
+
+        if(/^[-*]\s+/.test(line)){
+          const items = [];
+          while(index < lines.length && /^[-*]\s+/.test(lines[index])){
+            items.push(lines[index].replace(/^[-*]\s+/,''));
+            index += 1;
+          }
+          html.push(`<ul>${items.map(item => `<li>${inlineMarkdown(item)}</li>`).join('')}</ul>`);
+          continue;
+        }
+
+        if(/^\d+\.\s+/.test(line)){
+          const items = [];
+          while(index < lines.length && /^\d+\.\s+/.test(lines[index])){
+            items.push(lines[index].replace(/^\d+\.\s+/,''));
+            index += 1;
+          }
+          html.push(`<ol>${items.map(item => `<li>${inlineMarkdown(item)}</li>`).join('')}</ol>`);
+          continue;
+        }
+
+        if(!line.trim()){
+          index += 1;
+          continue;
+        }
+
+        // Join consecutive normal lines into one paragraph.
+        const paragraph = [line];
+        index += 1;
+        while(
+          index < lines.length &&
+          lines[index].trim() &&
+          !lines[index].includes('|') &&
+          !/^###\s+/.test(lines[index]) &&
+          !/^[-*]\s+/.test(lines[index]) &&
+          !/^\d+\.\s+/.test(lines[index])
+        ){
+          paragraph.push(lines[index]);
+          index += 1;
+        }
+
+        html.push(`<p>${inlineMarkdown(paragraph.join(' '))}</p>`);
+      }
+
+      return html.join('');
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Chat display helpers                                                   */
+    /* ---------------------------------------------------------------------- */
+
+    function appendMessage(role, text, sources = []){
+      if(els.emptyState.parentNode) els.emptyState.remove();
+
+      const wrapper = document.createElement('div');
+      wrapper.className = `msg ${role}`;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+
+      if(role === 'assistant'){
+        bubble.innerHTML = `<div class="assistant-content">${renderAssistantMarkdown(text)}</div>`;
+      }else{
+        bubble.textContent = text;
+      }
+
+      wrapper.appendChild(bubble);
+
+      if(sources.length){
+        const sourceLine = document.createElement('div');
+        sourceLine.className = 'sources-line';
+
+        sources.forEach(source => {
+          const chip = document.createElement('span');
+          chip.className = 'source-chip';
+          chip.textContent = `§ ${source}`;
+          sourceLine.appendChild(chip);
+        });
+
+        wrapper.appendChild(sourceLine);
+      }
+
+      els.chatScroll.appendChild(wrapper);
+      els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
+      return wrapper;
+    }
+
+    function parseSources(text){
+      const match = String(text || '').match(/\n?Sources?:\s*(.+)\s*$/i);
+
+      if(!match){
+        return {body:String(text || '').trim(),sources:[]};
+      }
+
+      return {
+        body:String(text || '').slice(0,match.index).trim(),
+        sources:match[1].split(',').map(item => item.trim()).filter(Boolean)
+      };
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Build single-trial or comparison prompt                                */
+    /* ---------------------------------------------------------------------- */
+
+    function buildSystemPrompt(){
+      const primaryInfo = trialInfo(primaryTrial);
+
+      const sharedRules = `
+You are a clinical evidence assistant. Use ONLY the evidence supplied below for these specific trials. Do not use outside knowledge to fill missing trial facts.
 
 Rules:
-- Be direct and concise. No filler, no hedging, no consulting-speak.
-- Prefer ClinicalTrials.gov for registry/protocol facts and posted trial results.
-- Use PubMed abstracts and open-access full text only when those sections are provided below.
-- Clearly distinguish registry data from literature/article data when they differ.
-- If the data doesn't contain the answer, say so plainly rather than guessing.
-- If asked about statistical analysis, p-values, confidence intervals, or significance testing, check the ClinicalTrials.gov statistical analysis fields and the raw results JSON excerpt. If those fields are absent, say they are not reported in the provided record.
-- If asked about results and the trial has no posted results or article results, say that clearly.
-- Do not claim to read paywalled articles. Only use abstracts and legal open-access full text provided below.
-- End every response with one line in the exact format: "Sources: X, Y" naming the section(s) you drew from, such as ClinicalTrials.gov Design, ClinicalTrials.gov Results, PubMed Abstract, Open-Access Full Text.
+- Be accurate, direct, and clear.
+- Prefer ClinicalTrials.gov for registry facts and posted results.
+- Use PubMed abstracts or legal open-access text only when supplied below.
+- Clearly say when a value, result, p-value, confidence interval, or detail is not reported.
+- Never invent missing evidence.
+- Never claim to have read paywalled full text.
+- Distinguish planned outcome measures from posted outcome results.
+- End every response with exactly one final line: Sources: X, Y
+`;
 
-CLINICALTRIALS.GOV REGISTRY DATA:
-${trialContext}
+      if(!comparisonTrial){
+        return `${sharedRules}
+You are answering questions about one clinical trial.
 
-PUBMED / OPEN-ACCESS LITERATURE DATA:
-${literatureContext || 'No PubMed abstract or legal open-access full-text content was found automatically for this trial.'}`;
+TRIAL 1 LABEL: ${primaryInfo.nctId} — ${primaryInfo.briefTitle}
 
-  try{
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system: systemPrompt,
-        messages: chatHistory
-      })
-    });
+TRIAL 1 CLINICALTRIALS.GOV DATA:
+${primaryTrialContext}
 
-    const data = await res.json();
+TRIAL 1 RELATED LITERATURE:
+${primaryLiteratureContext || 'No related PubMed abstract or legal open-access content was found automatically.'}`;
+      }
 
-    typingWrap.remove();
+      const comparisonInfo = trialInfo(comparisonTrial);
 
-    if(data.error){
-      appendMessage('assistant', `Error: ${data.error.message || 'request failed'}`);
-      return;
+      return `${sharedRules}
+You are comparing two clinical trials.
+
+Comparison-response rules:
+- Answer the user's question for BOTH studies.
+- Start with a Markdown table.
+- Use exactly three columns: Comparison area | Trial 1 (${primaryInfo.nctId}) | Trial 2 (${comparisonInfo.nctId}).
+- Include rows directly relevant to the user's question.
+- Put "Not reported" when evidence is missing; do not leave a cell blank.
+- After the table, add a short evidence-based interpretation of the most important differences.
+- Do not declare one trial "better" unless the provided evidence directly supports that conclusion and the designs are sufficiently comparable.
+
+TRIAL 1 LABEL: ${primaryInfo.nctId} — ${primaryInfo.briefTitle}
+TRIAL 1 CLINICALTRIALS.GOV DATA:
+${primaryTrialContext}
+
+TRIAL 1 RELATED LITERATURE:
+${primaryLiteratureContext || 'No related PubMed abstract or legal open-access content was found automatically.'}
+
+TRIAL 2 LABEL: ${comparisonInfo.nctId} — ${comparisonInfo.briefTitle}
+TRIAL 2 CLINICALTRIALS.GOV DATA:
+${comparisonTrialContext}
+
+TRIAL 2 RELATED LITERATURE:
+${comparisonLiteratureContext || 'No related PubMed abstract or legal open-access content was found automatically.'}`;
     }
 
-    const fullText = (data.content||[])
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('\n')
-      .trim();
+    /* ---------------------------------------------------------------------- */
+    /* Send a question to /api/chat                                           */
+    /* ---------------------------------------------------------------------- */
 
-    const { body, sources } = parseSources(fullText);
+    async function sendMessage(){
+      const question = els.chatInput.value.trim();
+      if(!question || !primaryTrial) return;
 
-    appendMessage('assistant', body, sources);
+      els.chatInput.value = '';
+      appendMessage('user',question);
+      chatHistory.push({role:'user',content:question});
 
-    chatHistory.push({
-      role: 'assistant',
-      content: fullText
+      const typing = document.createElement('div');
+      typing.className = 'msg assistant';
+      typing.innerHTML = `<div class="bubble typing"><span class="spinner"></span>${comparisonTrial ? 'Loading evidence and comparing both trials...' : 'Reading the selected trial evidence...'}</div>`;
+      els.chatScroll.appendChild(typing);
+      els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
+      els.sendBtn.disabled = true;
+
+      try{
+        // Wait for literature searches already running in the sidebar so the
+        // first question can include those sources too.
+        const pending = [primaryLiteraturePromise, comparisonLiteraturePromise].filter(Boolean);
+        if(pending.length) await Promise.allSettled(pending);
+
+        const response = await fetch('/api/chat', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            system:buildSystemPrompt(),
+            messages:chatHistory
+          })
+        });
+
+        const data = await response.json();
+        typing.remove();
+
+        if(!response.ok || data.error){
+          appendMessage('assistant',`Error: ${data.error?.message || 'The request failed.'}`);
+          return;
+        }
+
+        const fullText = (data.content || [])
+          .filter(block => block.type === 'text')
+          .map(block => block.text)
+          .join('\n')
+          .trim();
+
+        if(!fullText){
+          appendMessage('assistant','The model returned an empty answer. Please try the question again.');
+          return;
+        }
+
+        const parsed = parseSources(fullText);
+        appendMessage('assistant',parsed.body,parsed.sources);
+        chatHistory.push({role:'assistant',content:fullText});
+      }catch(error){
+        typing.remove();
+        appendMessage('assistant',`Something went wrong reaching the backend: ${error.message}`);
+      }finally{
+        els.sendBtn.disabled = false;
+      }
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Event listeners                                                        */
+    /* ---------------------------------------------------------------------- */
+
+    els.searchBtn.addEventListener('click',handlePrimarySearch);
+    els.searchInput.addEventListener('keydown',event => {
+      if(event.key === 'Enter') handlePrimarySearch();
     });
 
-  } catch(err){
-    typingWrap.remove();
-    appendMessage('assistant', `Something went wrong reaching the model: ${err.message}`);
-  } finally {
-    els.sendBtn.disabled = false;
-  }
-}
+    els.compareSearchBtn.addEventListener('click',handleComparisonSearch);
+    els.compareSearchInput.addEventListener('keydown',event => {
+      if(event.key === 'Enter') handleComparisonSearch();
+    });
 
-els.sendBtn.addEventListener('click', sendMessage);
+    els.sendBtn.addEventListener('click',sendMessage);
+    els.chatInput.addEventListener('keydown',event => {
+      if(event.key === 'Enter' && !event.shiftKey){
+        event.preventDefault();
+        sendMessage();
+      }
+    });
 
-els.chatInput.addEventListener('keydown', e => {
-  if(e.key === 'Enter' && !e.shiftKey){
-    e.preventDefault();
-    sendMessage();
-  }
-});
-</script>
+    // Set initial suggested questions when the page first loads.
+    renderSuggestions();
+  </script>
 </body>
 </html>
