@@ -1,14 +1,10 @@
 {
-  "name": "clinical-trial-evidence-assistant",
-  "version": "3.2.0",
+  "name": "clinical-trial-evidence-assistant", //project title 
+  "version": "3.2.0", 
   "private": true,
   "type": "module",
-  "description": "Clinical trial evidence assistant with one personal Zotero API key, automatic attached-PDF text extraction, PubMed/Europe PMC, and trial comparison.",
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "check": "node --check server.js"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=20"
