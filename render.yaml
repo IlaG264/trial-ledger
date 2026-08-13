@@ -11,7 +11,7 @@ services:
         sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5
-      - key: NCBI_EMAIL
-        sync: false
-      - key: NCBI_API_KEY
+      - key: ZOTERO_USER_ID
+        value: "21263291"
+      - key: ZOTERO_API_KEY
         sync: false
