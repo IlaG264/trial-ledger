@@ -1,9 +1,9 @@
 {
   "name": "clinical-trial-evidence-assistant",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "private": true,
   "type": "module",
-  "description": "Clinical trial evidence assistant with per-user Zotero OAuth and automatic attached-PDF text extraction.",
+  "description": "Clinical trial evidence assistant with one personal Zotero API key, automatic attached-PDF text extraction, PubMed/Europe PMC, and trial comparison.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -17,7 +17,6 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "fast-xml-parser": "^4.5.1",
-    "oauth-1.0a": "^2.2.6",
     "pdfjs-dist": "^5.4.149"
   }
 }

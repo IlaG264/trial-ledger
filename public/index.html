@@ -883,8 +883,11 @@
         <h3>My Zotero Library</h3>
       </div>
 
-      <div id="zoteroConnectionBox" class="notice-box" style="margin-bottom:12px;">
-        Checking Zotero connection...
+      <div class="notice-box" style="margin-bottom:12px;">
+        <strong>Personal Zotero library connected through your private API key</strong>
+        <div class="hint" style="margin-top:4px;">
+          This prototype uses the Zotero account configured privately in Render.
+        </div>
       </div>
       <div class="hint" style="margin-bottom:12px;">
         Load articles from your private Zotero library, select one, and ask questions about that paper.
@@ -1003,7 +1006,6 @@
       searchError: document.getElementById('searchError'),
       resultsArea: document.getElementById('resultsArea'),
 
-      zoteroConnectionBox: document.getElementById('zoteroConnectionBox'),
       zoteroSearchInput: document.getElementById('zoteroSearchInput'),
       loadZoteroBtn: document.getElementById('loadZoteroBtn'),
       zoteroError: document.getElementById('zoteroError'),
@@ -1044,8 +1046,6 @@
     let primaryTrial = null;
     let comparisonTrial = null;
 
-    let zoteroConnected = false;
-    let zoteroConnectionIdentity = '';
     let selectedZoteroArticle = null;
     let selectedZoteroContext = '';
     let selectedZoteroBaseContext = '';
@@ -1744,102 +1744,6 @@ ${compactJson(r, 35000) || 'N/A'}`);
 
 
     /* ---------------------------------------------------------------------- */
-    /* Zotero account connection                                              */
-    /* ---------------------------------------------------------------------- */
-
-    function renderZoteroConnection(){
-      if(zoteroConnected){
-        els.zoteroConnectionBox.innerHTML = `
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <div>
-              <strong>✓ Zotero connected</strong>
-              <div class="hint" style="margin-top:4px;">
-                ${zoteroConnectionIdentity ? `Connected as ${esc(zoteroConnectionIdentity)}` : 'Your personal Zotero library is available.'}
-              </div>
-            </div>
-            <button class="btn secondary small" id="disconnectZoteroBtn" type="button">Disconnect Zotero</button>
-          </div>
-        `;
-
-        els.loadZoteroBtn.disabled = false;
-
-        const disconnectBtn = els.zoteroConnectionBox.querySelector('#disconnectZoteroBtn');
-        disconnectBtn?.addEventListener('click',disconnectZotero);
-      }else{
-        els.zoteroConnectionBox.innerHTML = `
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <div>
-              <strong>Connect your own Zotero account</strong>
-              <div class="hint" style="margin-top:4px;">
-                Zotero handles the login. This app requests read-only access to your personal library and notes.
-              </div>
-            </div>
-            <a class="btn" href="/auth/zotero/start" style="text-decoration:none;">Connect Zotero</a>
-          </div>
-        `;
-
-        els.loadZoteroBtn.disabled = true;
-      }
-    }
-
-    async function refreshZoteroStatus(){
-      try{
-        const response = await fetch('/api/zotero/status');
-        const data = await response.json();
-
-        zoteroConnected = Boolean(data.connected);
-        zoteroConnectionIdentity = data.username || (data.userId ? `Zotero user ${data.userId}` : '');
-        renderZoteroConnection();
-      }catch(_){
-        zoteroConnected = false;
-        zoteroConnectionIdentity = '';
-        renderZoteroConnection();
-      }
-    }
-
-    async function disconnectZotero(){
-      try{
-        await fetch('/auth/zotero/disconnect',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'}
-        });
-      }finally{
-        zoteroConnected = false;
-        zoteroConnectionIdentity = '';
-        selectedZoteroArticle = null;
-        selectedZoteroContext = '';
-        selectedZoteroBaseContext = '';
-        selectedZoteroPdfStatus = null;
-        els.zoteroResultsArea.innerHTML = '';
-        renderZoteroArticleCard();
-        renderZoteroConnection();
-        resetChatDisplay();
-        updateModeUI();
-      }
-    }
-
-    function readOAuthReturnStatus(){
-      const params = new URLSearchParams(window.location.search);
-      const status = params.get('zotero');
-
-      if(status === 'connected'){
-        history.replaceState({},'',window.location.pathname);
-        setTimeout(() => {
-          if(els.zoteroConnectionBox){
-            els.zoteroConnectionBox.scrollIntoView({behavior:'smooth',block:'center'});
-          }
-        },100);
-      }
-
-      if(status === 'error'){
-        const message = params.get('message') || 'Zotero connection failed.';
-        showError(els.zoteroError,message);
-        history.replaceState({},'',window.location.pathname);
-      }
-    }
-
-
-    /* ---------------------------------------------------------------------- */
     /* Zotero personal library                                                */
     /* ---------------------------------------------------------------------- */
 
@@ -1912,11 +1816,6 @@ ${compactJson(r, 35000) || 'N/A'}`);
     }
 
     async function loadZoteroLibrary(){
-      if(!zoteroConnected){
-        showError(els.zoteroError,'Connect your Zotero account first.');
-        return;
-      }
-
       clearError(els.zoteroError);
       els.zoteroResultsArea.innerHTML = '<div class="notice-box"><span class="spinner"></span>Loading your Zotero library...</div>';
       els.loadZoteroBtn.disabled = true;
@@ -1929,11 +1828,6 @@ ${compactJson(r, 35000) || 'N/A'}`);
         const data = await response.json();
 
         if(!response.ok || data.error){
-          if(response.status === 401){
-            zoteroConnected = false;
-            zoteroConnectionIdentity = '';
-            renderZoteroConnection();
-          }
           throw new Error(data.error?.message || 'Could not load Zotero library.');
         }
 
@@ -2014,11 +1908,6 @@ ${compactJson(r, 35000) || 'N/A'}`);
         const data = await response.json();
 
         if(!response.ok || data.error){
-          if(response.status === 401){
-            zoteroConnected = false;
-            zoteroConnectionIdentity = '';
-            renderZoteroConnection();
-          }
           throw new Error(data.error?.message || 'Could not load Zotero article.');
         }
 
@@ -2831,9 +2720,6 @@ No evidence source is currently selected.`;
     /* ---------------------------------------------------------------------- */
     /* Event listeners                                                        */
     /* ---------------------------------------------------------------------- */
-
-    readOAuthReturnStatus();
-    refreshZoteroStatus();
 
     els.zoteroPdfUploadInput.addEventListener('change',handleManualZoteroPdfUpload);
     els.loadZoteroBtn.addEventListener('click',loadZoteroLibrary);
