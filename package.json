@@ -1,9 +1,9 @@
 {
   "name": "clinical-trial-evidence-assistant",
-  "version": "3.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Clinical trial evidence assistant with PubMed/Europe PMC, two-trial comparison, and per-user Zotero OAuth.",
+  "description": "ClinicalTrials.gov evidence assistant with PubMed/Europe PMC literature and two-trial comparison mode.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -16,7 +16,6 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "fast-xml-parser": "^4.5.1",
-    "oauth-1.0a": "^2.2.6"
+    "fast-xml-parser": "^4.5.1"
   }
 }
