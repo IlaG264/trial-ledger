@@ -851,7 +851,7 @@
       </div>
       <div class="kicker source-note">
         Registry: ClinicalTrials.gov API v2<br>
-        Literature: PubMed + Europe PMC
+        Literature: PubMed + Europe PMC<br>Personal library: Zotero
       </div>
     </header>
 
@@ -871,11 +871,31 @@
       </div>
 
       <div class="hint">
-        Exact NCT IDs load directly. Keyword results are ordered with posted results studies first.
+        Exact NCT IDs load directly. Keyword results are automatically ordered with posted-results studies first.
       </div>
 
       <div id="searchError"></div>
       <div id="resultsArea"></div>
+
+      <div style="height:1px;background:var(--line);margin:28px 0;"></div>
+
+      <div class="panel-title" style="margin-bottom:10px;">
+        <h3>My Zotero Library</h3>
+      </div>
+      <div class="hint" style="margin-bottom:12px;">
+        Load articles from your private Zotero library, select one, and ask questions about that paper.
+      </div>
+      <div class="search-row">
+        <input
+          class="text-input"
+          id="zoteroSearchInput"
+          type="text"
+          placeholder="Optional: filter Zotero by title, author, DOI, or tag"
+        />
+        <button class="btn secondary" id="loadZoteroBtn">Load Zotero articles</button>
+      </div>
+      <div id="zoteroError"></div>
+      <div id="zoteroResultsArea"></div>
     </section>
 
     <!-- ------------------------------------------------------------------- -->
@@ -886,6 +906,19 @@
       <aside class="sidebar">
         <!-- Trial 1 summary is inserted here with JavaScript. -->
         <section class="panel trial-card" id="primaryTrialCard"></section>
+
+        <!-- Selected Zotero article. Visible in article-only mode or alongside a trial. -->
+        <section class="panel" id="zoteroArticleCard" style="display:none;"></section>
+
+        <section class="panel" id="zoteroAddPanel">
+          <div class="panel-title">
+            <h3>Use a Zotero article</h3>
+          </div>
+          <div class="hint">
+            Add or change a personal article to use as evidence with the chatbot.
+          </div>
+          <button class="btn secondary small" id="chooseZoteroBtn" type="button">Choose from Zotero</button>
+        </section>
 
         <!-- This panel lets the user search for Trial 2. -->
         <section class="panel" id="compareSearchPanel">
@@ -935,7 +968,7 @@
           <div class="empty-state" id="emptyState">
             <h2 id="emptyTitle">Ask this trial anything</h2>
             <p id="emptyCopy">
-              The assistant uses the selected ClinicalTrials.gov record and any related PubMed or open-access evidence found automatically.
+              The assistant uses the selected ClinicalTrials.gov record and any related PubMed or legal open-access evidence found automatically.
             </p>
             <div class="suggestions" id="suggestionChips"></div>
           </div>
@@ -965,9 +998,18 @@
       searchError: document.getElementById('searchError'),
       resultsArea: document.getElementById('resultsArea'),
 
+      zoteroSearchInput: document.getElementById('zoteroSearchInput'),
+      loadZoteroBtn: document.getElementById('loadZoteroBtn'),
+      zoteroError: document.getElementById('zoteroError'),
+      zoteroResultsArea: document.getElementById('zoteroResultsArea'),
+
       mainLayout: document.getElementById('mainLayout'),
       primaryTrialCard: document.getElementById('primaryTrialCard'),
       comparisonTrialCard: document.getElementById('comparisonTrialCard'),
+      zoteroArticleCard: document.getElementById('zoteroArticleCard'),
+      zoteroAddPanel: document.getElementById('zoteroAddPanel'),
+      chooseZoteroBtn: document.getElementById('chooseZoteroBtn'),
+      compareSearchPanel: document.getElementById('compareSearchPanel'),
 
       compareSearchInput: document.getElementById('compareSearchInput'),
       compareSearchBtn: document.getElementById('compareSearchBtn'),
@@ -994,6 +1036,9 @@
 
     let primaryTrial = null;
     let comparisonTrial = null;
+
+    let selectedZoteroArticle = null;
+    let selectedZoteroContext = '';
 
     let primaryTrialContext = '';
     let comparisonTrialContext = '';
@@ -1685,6 +1730,198 @@ ${compactJson(r, 35000) || 'N/A'}`);
       return comparisonLiteraturePromise;
     }
 
+
+    /* ---------------------------------------------------------------------- */
+    /* Zotero personal library                                                */
+    /* ---------------------------------------------------------------------- */
+
+    function zoteroDisplayDate(value){
+      if(!value) return 'Date not listed';
+      return String(value);
+    }
+
+    function renderZoteroResults(items){
+      els.zoteroResultsArea.innerHTML = '';
+
+      if(!items.length){
+        els.zoteroResultsArea.innerHTML = '<div class="notice-box">No matching Zotero items were found.</div>';
+        return;
+      }
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'results-toolbar';
+      toolbar.innerHTML = `
+        <div class="results-count">${items.length} Zotero item${items.length === 1 ? '' : 's'} loaded</div>
+        <div class="results-order-note">Private library</div>
+      `;
+
+      const list = document.createElement('div');
+      list.className = 'results-list';
+
+      items.forEach(item => {
+        const card = document.createElement('article');
+        card.className = 'result-card';
+
+        card.innerHTML = `
+          <div class="result-top">
+            <div class="result-title">${esc(item.title || '(Untitled)')}</div>
+            <div class="nct-pill">${esc(item.itemType || 'article')}</div>
+          </div>
+
+          <div class="result-meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Authors</span>
+              ${esc(item.creators || 'Not listed')}
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Date</span>
+              ${esc(zoteroDisplayDate(item.date))}
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Publication</span>
+              ${esc(item.publicationTitle || 'Not listed')}
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">DOI</span>
+              ${esc(item.DOI || 'Not listed')}
+            </div>
+          </div>
+
+          <div class="result-footer">
+            <span class="results-pill registry">Zotero library</span>
+            <div class="result-actions">
+              <button class="btn small" type="button">Use this article →</button>
+            </div>
+          </div>
+        `;
+
+        card.querySelector('button').addEventListener('click', () => loadZoteroArticle(item.key));
+        list.appendChild(card);
+      });
+
+      els.zoteroResultsArea.appendChild(toolbar);
+      els.zoteroResultsArea.appendChild(list);
+    }
+
+    async function loadZoteroLibrary(){
+      clearError(els.zoteroError);
+      els.zoteroResultsArea.innerHTML = '<div class="notice-box"><span class="spinner"></span>Loading your Zotero library...</div>';
+      els.loadZoteroBtn.disabled = true;
+
+      try{
+        const q = els.zoteroSearchInput.value.trim();
+        const url = q ? `/api/zotero/library?q=${encodeURIComponent(q)}` : '/api/zotero/library';
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if(!response.ok || data.error){
+          throw new Error(data.error?.message || 'Could not load Zotero library.');
+        }
+
+        renderZoteroResults(data.items || []);
+      }catch(error){
+        els.zoteroResultsArea.innerHTML = '';
+        showError(els.zoteroError,error.message);
+      }finally{
+        els.loadZoteroBtn.disabled = false;
+      }
+    }
+
+    function renderZoteroArticleCard(){
+      if(!selectedZoteroArticle){
+        els.zoteroArticleCard.style.display = 'none';
+        els.zoteroArticleCard.innerHTML = '';
+        return;
+      }
+
+      const article = selectedZoteroArticle;
+
+      els.zoteroArticleCard.innerHTML = `
+        <div class="trial-number">Zotero article</div>
+        <h2>${esc(article.title || '(Untitled)')}</h2>
+
+        <div class="trial-field"><strong>Authors</strong>${esc(article.creators || 'Not listed')}</div>
+        <div class="trial-field"><strong>Date</strong>${esc(article.date || 'Not listed')}</div>
+        <div class="trial-field"><strong>Publication</strong>${esc(article.publicationTitle || 'Not listed')}</div>
+        <div class="trial-field"><strong>DOI</strong>${esc(article.DOI || 'Not listed')}</div>
+
+        <div class="results-pill posted">✓ Personal evidence selected</div>
+
+        <div class="trial-card-actions">
+          <button class="btn danger small" id="removeZoteroBtn" type="button">Remove article</button>
+        </div>
+      `;
+
+      els.zoteroArticleCard.style.display = 'block';
+      els.zoteroArticleCard.querySelector('#removeZoteroBtn').addEventListener('click', removeZoteroArticle);
+    }
+
+    async function loadZoteroArticle(itemKey){
+      clearError(els.zoteroError);
+      els.zoteroResultsArea.innerHTML = '<div class="notice-box"><span class="spinner"></span>Loading article evidence from Zotero...</div>';
+
+      try{
+        const response = await fetch(`/api/zotero/article/${encodeURIComponent(itemKey)}`);
+        const data = await response.json();
+
+        if(!response.ok || data.error){
+          throw new Error(data.error?.message || 'Could not load Zotero article.');
+        }
+
+        selectedZoteroArticle = data.article || null;
+        selectedZoteroContext = data.context || '';
+        chatHistory = [];
+
+        renderZoteroArticleCard();
+
+        // If no trial has been selected yet, enter article-only chat mode.
+        if(!primaryTrial){
+          els.primaryTrialCard.style.display = 'none';
+          els.compareSearchPanel.style.display = 'none';
+          els.primaryLiteratureSection.innerHTML = '';
+          els.comparisonLiteratureSection.innerHTML = '';
+        }else{
+          els.primaryTrialCard.style.display = 'block';
+          els.compareSearchPanel.style.display = 'block';
+        }
+
+        els.searchBlock.style.display = 'none';
+        els.mainLayout.style.display = 'grid';
+
+        els.zoteroResultsArea.innerHTML = '';
+        resetChatDisplay();
+        updateModeUI();
+      }catch(error){
+        els.zoteroResultsArea.innerHTML = '';
+        showError(els.zoteroError,error.message);
+      }
+    }
+
+    function removeZoteroArticle(){
+      selectedZoteroArticle = null;
+      selectedZoteroContext = '';
+      chatHistory = [];
+      renderZoteroArticleCard();
+
+      if(!primaryTrial){
+        resetToSearch();
+        return;
+      }
+
+      resetChatDisplay();
+      updateModeUI();
+    }
+
+    function chooseDifferentZoteroArticle(){
+      els.mainLayout.style.display = 'none';
+      els.searchBlock.style.display = 'block';
+      els.zoteroResultsArea.innerHTML = '';
+      clearError(els.zoteroError);
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
+
+
     /* ---------------------------------------------------------------------- */
     /* Selected trial cards                                                   */
     /* ---------------------------------------------------------------------- */
@@ -1724,14 +1961,32 @@ ${compactJson(r, 35000) || 'N/A'}`);
 
     function updateModeUI(){
       const comparing = Boolean(comparisonTrial);
+      const hasTrial = Boolean(primaryTrial);
+      const hasZotero = Boolean(selectedZoteroArticle);
 
-      els.modeBadge.textContent = comparing ? 'Comparison mode' : 'Single trial';
-      els.modeBadge.classList.toggle('compare', comparing);
-      els.chatHeaderTitle.textContent = comparing ? 'Compare Trial 1 and Trial 2' : 'Ask about Trial 1';
-      els.emptyTitle.textContent = comparing ? 'Compare these two trials' : 'Ask this trial anything';
-      els.emptyCopy.textContent = comparing
-        ? 'Ask one question and the assistant will answer using a side-by-side comparison table based on both trial records and their related literature.'
-        : 'The assistant uses the selected ClinicalTrials.gov record and any related PubMed or legal open-access evidence found automatically.';
+      if(!hasTrial && hasZotero){
+        els.modeBadge.textContent = 'Zotero article';
+        els.modeBadge.classList.remove('compare');
+        els.chatHeaderTitle.textContent = 'Ask about selected Zotero article';
+        els.emptyTitle.textContent = 'Ask this article anything';
+        els.emptyCopy.textContent = 'The assistant uses the metadata, abstract, notes, and indexed full text retrieved from your selected Zotero item.';
+      }else if(comparing){
+        els.modeBadge.textContent = hasZotero ? 'Trials + Zotero' : 'Comparison mode';
+        els.modeBadge.classList.add('compare');
+        els.chatHeaderTitle.textContent = hasZotero ? 'Compare trials with Zotero evidence' : 'Compare Trial 1 and Trial 2';
+        els.emptyTitle.textContent = 'Compare these evidence sources';
+        els.emptyCopy.textContent = hasZotero
+          ? 'Ask one question using both trial records, related literature, and your selected Zotero article.'
+          : 'Ask one question and the assistant will answer using a side-by-side comparison table based on both trial records and their related literature.';
+      }else{
+        els.modeBadge.textContent = hasZotero ? 'Trial + Zotero' : 'Single trial';
+        els.modeBadge.classList.remove('compare');
+        els.chatHeaderTitle.textContent = hasZotero ? 'Ask about Trial 1 + Zotero article' : 'Ask about Trial 1';
+        els.emptyTitle.textContent = hasZotero ? 'Use the trial and your article together' : 'Ask this trial anything';
+        els.emptyCopy.textContent = hasZotero
+          ? 'The assistant can use the selected ClinicalTrials.gov record, related literature, and your selected Zotero article.'
+          : 'The assistant uses the selected ClinicalTrials.gov record and any related PubMed or legal open-access evidence found automatically.';
+      }
 
       renderSuggestions();
     }
@@ -1759,6 +2014,9 @@ ${compactJson(r, 35000) || 'N/A'}`);
         chatHistory = [];
 
         renderTrialCard(els.primaryTrialCard, primaryTrial, 1);
+        els.primaryTrialCard.style.display = 'block';
+        els.compareSearchPanel.style.display = 'block';
+        renderZoteroArticleCard();
         els.comparisonTrialCard.style.display = 'none';
         els.comparisonLiteratureSection.innerHTML = '';
         els.compareSearchInput.value = '';
@@ -1918,6 +2176,8 @@ ${compactJson(r, 35000) || 'N/A'}`);
     function resetToSearch(){
       primaryTrial = null;
       comparisonTrial = null;
+      selectedZoteroArticle = null;
+      selectedZoteroContext = '';
       primaryTrialContext = '';
       comparisonTrialContext = '';
       primaryLiteratureContext = '';
@@ -1932,6 +2192,12 @@ ${compactJson(r, 35000) || 'N/A'}`);
       els.searchBlock.style.display = 'block';
       els.searchInput.value = '';
       els.resultsArea.innerHTML = '';
+      els.zoteroSearchInput.value = '';
+      els.zoteroResultsArea.innerHTML = '';
+      els.zoteroArticleCard.style.display = 'none';
+      els.zoteroArticleCard.innerHTML = '';
+      els.primaryTrialCard.style.display = 'block';
+      els.compareSearchPanel.style.display = 'block';
       clearError(els.searchError);
       resetChatDisplay();
       window.scrollTo({top:0,behavior:'smooth'});
@@ -1943,22 +2209,52 @@ ${compactJson(r, 35000) || 'N/A'}`);
 
     function renderSuggestions(){
       const comparing = Boolean(comparisonTrial);
+      const hasTrial = Boolean(primaryTrial);
+      const hasZotero = Boolean(selectedZoteroArticle);
 
-      const suggestions = comparing
-        ? [
-            'Compare the study designs and patient populations',
-            'Compare the primary outcomes and posted results',
-            'Which trial reported stronger statistical evidence?',
-            'Compare adverse events and safety findings',
-            'Compare enrollment, eligibility, and follow-up time'
-          ]
-        : [
-            'Summarize the study design in plain terms',
-            'What are the key inclusion and exclusion criteria?',
-            'What were the primary outcome results?',
-            'What adverse events were most common?',
-            'Were p-values or confidence intervals reported?'
-          ];
+      let suggestions;
+
+      if(!hasTrial && hasZotero){
+        suggestions = [
+          'Summarize this article in plain language',
+          'What were the main findings?',
+          'What population and methods were used?',
+          'What were the major limitations?',
+          'What statistical results were reported?'
+        ];
+      }else if(comparing && hasZotero){
+        suggestions = [
+          'Compare the two trials and this article',
+          'Does the Zotero article report the same endpoints as the trial registry?',
+          'Compare study populations across all evidence sources',
+          'Compare efficacy and statistical results',
+          'Identify any differences between registered and published results'
+        ];
+      }else if(comparing){
+        suggestions = [
+          'Compare the study designs and patient populations',
+          'Compare the primary outcomes and posted results',
+          'Which trial reported stronger statistical evidence?',
+          'Compare adverse events and safety findings',
+          'Compare enrollment, eligibility, and follow-up time'
+        ];
+      }else if(hasTrial && hasZotero){
+        suggestions = [
+          'Compare the trial registry with this Zotero article',
+          'Does the article report the same primary endpoint?',
+          'Compare enrollment and patient population',
+          'What additional results are reported in the article?',
+          'Are there differences between registered and published outcomes?'
+        ];
+      }else{
+        suggestions = [
+          'Summarize the study design in plain terms',
+          'What are the key inclusion and exclusion criteria?',
+          'What were the primary outcome results?',
+          'What adverse events were most common?',
+          'Were p-values or confidence intervals reported?'
+        ];
+      }
 
       els.suggestionChips.innerHTML = '';
 
@@ -2149,25 +2445,37 @@ ${compactJson(r, 35000) || 'N/A'}`);
     /* ---------------------------------------------------------------------- */
 
     function buildSystemPrompt(){
-      const primaryInfo = trialInfo(primaryTrial);
+      const hasTrial = Boolean(primaryTrial);
+      const hasZotero = Boolean(selectedZoteroArticle);
+      const primaryInfo = hasTrial ? trialInfo(primaryTrial) : null;
 
       const sharedRules = `
-You are a clinical evidence assistant. Use ONLY the evidence supplied below for these specific trials. Do not use outside knowledge to fill missing trial facts.
+You are a clinical evidence assistant. Use ONLY the evidence supplied below. Do not use outside knowledge to fill missing facts.
 
 Rules:
 - Be accurate, direct, and clear.
-- Prefer ClinicalTrials.gov for registry facts and posted results.
+- Prefer ClinicalTrials.gov for registry facts and posted trial results.
 - Use PubMed abstracts or legal open-access text only when supplied below.
+- Treat the user-selected Zotero article as a separate evidence source.
+- Clearly distinguish registry evidence from publication evidence when they differ.
 - Clearly say when a value, result, p-value, confidence interval, or detail is not reported.
 - Never invent missing evidence.
-- Never claim to have read paywalled full text.
+- Never claim to have read paywalled full text unless full text is actually supplied.
 - Distinguish planned outcome measures from posted outcome results.
 - End every response with exactly one final line: Sources: X, Y
 `;
 
-      if(!comparisonTrial){
+      if(!hasTrial && hasZotero){
         return `${sharedRules}
-You are answering questions about one clinical trial.
+You are answering questions about one user-selected Zotero article.
+
+USER-SELECTED ZOTERO ARTICLE:
+${selectedZoteroContext}`;
+      }
+
+      if(hasTrial && !comparisonTrial){
+        return `${sharedRules}
+You are answering questions about one clinical trial${hasZotero ? ' and one user-selected Zotero article' : ''}.
 
 TRIAL 1 LABEL: ${primaryInfo.nctId} — ${primaryInfo.briefTitle}
 
@@ -2175,22 +2483,27 @@ TRIAL 1 CLINICALTRIALS.GOV DATA:
 ${primaryTrialContext}
 
 TRIAL 1 RELATED LITERATURE:
-${primaryLiteratureContext || 'No related PubMed abstract or legal open-access content was found automatically.'}`;
+${primaryLiteratureContext || 'No related PubMed abstract or legal open-access content was found automatically.'}
+
+${hasZotero ? `USER-SELECTED ZOTERO ARTICLE:
+${selectedZoteroContext}` : ''}`;
       }
 
-      const comparisonInfo = trialInfo(comparisonTrial);
+      if(hasTrial && comparisonTrial){
+        const comparisonInfo = trialInfo(comparisonTrial);
 
-      return `${sharedRules}
-You are comparing two clinical trials.
+        return `${sharedRules}
+You are comparing two clinical trials${hasZotero ? ' with an additional user-selected Zotero article' : ''}.
 
 Comparison-response rules:
-- Answer the user's question for BOTH studies.
+- Answer the user's question for BOTH trials.
+- When the Zotero article is relevant, explicitly identify what it adds or how it differs.
 - Start with a Markdown table.
-- Use exactly three columns: Comparison area | Trial 1 (${primaryInfo.nctId}) | Trial 2 (${comparisonInfo.nctId}).
+- Use exactly three columns for the trial comparison: Comparison area | Trial 1 (${primaryInfo.nctId}) | Trial 2 (${comparisonInfo.nctId}).
 - Include rows directly relevant to the user's question.
 - Put "Not reported" when evidence is missing; do not leave a cell blank.
-- After the table, add a short evidence-based interpretation of the most important differences.
-- Do not declare one trial "better" unless the provided evidence directly supports that conclusion and the designs are sufficiently comparable.
+- After the table, add a short evidence-based interpretation.
+- Do not declare one trial "better" unless the supplied evidence directly supports that conclusion and the designs are sufficiently comparable.
 
 TRIAL 1 LABEL: ${primaryInfo.nctId} — ${primaryInfo.briefTitle}
 TRIAL 1 CLINICALTRIALS.GOV DATA:
@@ -2204,7 +2517,14 @@ TRIAL 2 CLINICALTRIALS.GOV DATA:
 ${comparisonTrialContext}
 
 TRIAL 2 RELATED LITERATURE:
-${comparisonLiteratureContext || 'No related PubMed abstract or legal open-access content was found automatically.'}`;
+${comparisonLiteratureContext || 'No related PubMed abstract or legal open-access content was found automatically.'}
+
+${hasZotero ? `USER-SELECTED ZOTERO ARTICLE:
+${selectedZoteroContext}` : ''}`;
+      }
+
+      return `${sharedRules}
+No evidence source is currently selected.`;
     }
 
     /* ---------------------------------------------------------------------- */
@@ -2213,7 +2533,7 @@ ${comparisonLiteratureContext || 'No related PubMed abstract or legal open-acces
 
     async function sendMessage(){
       const question = els.chatInput.value.trim();
-      if(!question || !primaryTrial) return;
+      if(!question || (!primaryTrial && !selectedZoteroArticle)) return;
 
       els.chatInput.value = '';
       appendMessage('user',question);
@@ -2221,7 +2541,12 @@ ${comparisonLiteratureContext || 'No related PubMed abstract or legal open-acces
 
       const typing = document.createElement('div');
       typing.className = 'msg assistant';
-      typing.innerHTML = `<div class="bubble typing"><span class="spinner"></span>${comparisonTrial ? 'Loading evidence and comparing both trials...' : 'Reading the selected trial evidence...'}</div>`;
+      const typingText = comparisonTrial
+        ? 'Loading evidence and comparing sources...'
+        : (!primaryTrial && selectedZoteroArticle
+            ? 'Reading your selected Zotero article...'
+            : (selectedZoteroArticle ? 'Reading the trial and Zotero evidence...' : 'Reading the selected trial evidence...'));
+      typing.innerHTML = `<div class="bubble typing"><span class="spinner"></span>${typingText}</div>`;
       els.chatScroll.appendChild(typing);
       els.chatScroll.scrollTop = els.chatScroll.scrollHeight;
       els.sendBtn.disabled = true;
@@ -2274,6 +2599,12 @@ ${comparisonLiteratureContext || 'No related PubMed abstract or legal open-acces
     /* ---------------------------------------------------------------------- */
     /* Event listeners                                                        */
     /* ---------------------------------------------------------------------- */
+
+    els.loadZoteroBtn.addEventListener('click',loadZoteroLibrary);
+    els.zoteroSearchInput.addEventListener('keydown',(event) => {
+      if(event.key === 'Enter') loadZoteroLibrary();
+    });
+    els.chooseZoteroBtn.addEventListener('click',chooseDifferentZoteroArticle);
 
     els.searchBtn.addEventListener('click',handlePrimarySearch);
     els.searchInput.addEventListener('keydown',event => {

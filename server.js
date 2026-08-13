@@ -28,6 +28,12 @@ const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const NCBI_EMAIL = process.env.NCBI_EMAIL || "";
 const NCBI_API_KEY = process.env.NCBI_API_KEY || "";
 
+// Zotero Web API settings.
+// IMPORTANT: Keep ZOTERO_API_KEY in Render/.env only — never in public/index.html or GitHub.
+const ZOTERO_USER_ID = process.env.ZOTERO_USER_ID || "21263291";
+const ZOTERO_API_KEY = process.env.ZOTERO_API_KEY || "";
+const ZOTERO_API_BASE = "https://api.zotero.org";
+
 // ES modules do not create __dirname automatically, so we recreate it here.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,30 +79,10 @@ function textOf(value) {
 // Normalize spaces and place a safe character limit on long evidence text.
 function cleanText(text, maxLen = 6000) {
   return String(text || "")
-
-    // Keep abstract section headings, but remove the HTML tags.
-    // Example: <h4>Introduction</h4> becomes "Introduction: "
-    .replace(/<h4[^>]*>/gi, "")
-    .replace(/<\/h4>/gi, ": ")
-
-    // Remove any other remaining HTML tags.
-    .replace(/<[^>]+>/g, " ")
-
-    // Convert common HTML codes back into normal characters.
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-
-    // Remove extra spaces.
     .replace(/\s+/g, " ")
     .replace(/\[\s+/g, "[")
     .replace(/\s+\]/g, "]")
     .trim()
-
-    // Prevent extremely long text from being returned.
     .slice(0, maxLen);
 }
 
@@ -561,6 +547,298 @@ app.post("/api/literature", async (req, res) => {
   }
 });
 
+
+/* -------------------------------------------------------------------------- */
+/* Zotero Web API                                                             */
+/* -------------------------------------------------------------------------- */
+
+function zoteroHeaders() {
+  const headers = {
+    accept: "application/json",
+    "Zotero-API-Version": "3"
+  };
+
+  if (ZOTERO_API_KEY) {
+    headers["Zotero-API-Key"] = ZOTERO_API_KEY;
+  }
+
+  return headers;
+}
+
+async function zoteroFetchJson(pathname) {
+  if (!ZOTERO_USER_ID) {
+    throw new Error("Missing ZOTERO_USER_ID.");
+  }
+
+  if (!ZOTERO_API_KEY) {
+    throw new Error(
+      "Missing ZOTERO_API_KEY. Add it to Render environment variables or your local .env file."
+    );
+  }
+
+  const response = await fetch(`${ZOTERO_API_BASE}${pathname}`, {
+    headers: zoteroHeaders()
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Zotero request failed (${response.status}): ${text.slice(0, 300)}`);
+  }
+
+  return text ? JSON.parse(text) : null;
+}
+
+function zoteroCreators(creators = []) {
+  return arr(creators)
+    .map((creator) => {
+      if (!creator) return "";
+      if (creator.name) return cleanText(creator.name, 200);
+      return cleanText(
+        [creator.firstName, creator.lastName].filter(Boolean).join(" "),
+        200
+      );
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+function stripSimpleHtml(value = "") {
+  return cleanText(
+    String(value || "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<[^>]+>/g, " "),
+    12000
+  );
+}
+
+function normalizeZoteroItem(item) {
+  const data = item?.data || {};
+
+  return {
+    key: item?.key || data.key || "",
+    version: item?.version || data.version || 0,
+    itemType: data.itemType || "",
+    title: cleanText(data.title || "(Untitled)", 1200),
+    creators: zoteroCreators(data.creators || []),
+    date: cleanText(data.date || "", 100),
+    publicationTitle: cleanText(
+      data.publicationTitle || data.bookTitle || data.proceedingsTitle || "",
+      500
+    ),
+    volume: cleanText(data.volume || "", 50),
+    issue: cleanText(data.issue || "", 50),
+    pages: cleanText(data.pages || "", 100),
+    DOI: cleanText(data.DOI || "", 300),
+    url: cleanText(data.url || "", 1200),
+    abstractNote: stripSimpleHtml(data.abstractNote || ""),
+    tags: arr(data.tags)
+      .map((tag) => cleanText(tag?.tag || tag, 150))
+      .filter(Boolean)
+      .slice(0, 30),
+    dateModified: data.dateModified || "",
+    parentItem: data.parentItem || ""
+  };
+}
+
+function buildZoteroArticleContext({ item, notes = [], attachment = null, fullText = "" }) {
+  const article = normalizeZoteroItem(item);
+  const lines = [
+    "## USER-SELECTED ZOTERO ARTICLE",
+    `Zotero item key: ${article.key}`,
+    `Item type: ${article.itemType || "Not reported"}`,
+    `Title: ${article.title || "Not reported"}`,
+    `Authors/creators: ${article.creators || "Not reported"}`,
+    `Date: ${article.date || "Not reported"}`,
+    `Journal/publication: ${article.publicationTitle || "Not reported"}`,
+    `DOI: ${article.DOI || "Not reported"}`,
+    `URL: ${article.url || "Not reported"}`
+  ];
+
+  if (article.abstractNote) {
+    lines.push(`Abstract: ${article.abstractNote}`);
+  } else {
+    lines.push("Abstract: Not available in the Zotero item.");
+  }
+
+  if (article.tags.length) {
+    lines.push(`Tags: ${article.tags.join(", ")}`);
+  }
+
+  if (notes.length) {
+    lines.push(
+      `Zotero notes:\n${notes
+        .map((note, index) => `Note ${index + 1}: ${stripSimpleHtml(note?.data?.note || "")}`)
+        .filter((line) => !line.endsWith(": "))
+        .join("\n")}`
+    );
+  }
+
+  if (attachment) {
+    const attachmentData = attachment?.data || {};
+    lines.push(
+      `Attachment: ${cleanText(attachmentData.title || attachmentData.filename || "Attached file", 500)}`
+    );
+  }
+
+  if (fullText) {
+    lines.push(
+      `Indexed full text from Zotero:\n${cleanText(fullText, 30000)}`
+    );
+  } else {
+    lines.push(
+      "Indexed full text: Not retrieved. Answer only from the metadata, abstract, and notes above."
+    );
+  }
+
+  return lines.join("\n");
+}
+
+// Load recent top-level items from the user's Zotero library.
+// The frontend can also pass ?q=keyword to filter by title/creator/tag.
+app.get("/api/zotero/library", async (req, res) => {
+  try {
+    const q = cleanText(req.query.q || "", 300).toLowerCase();
+
+    const params = new URLSearchParams({
+      limit: "100",
+      sort: "dateModified",
+      direction: "desc",
+      format: "json"
+    });
+
+    const rawItems = await zoteroFetchJson(
+      `/users/${encodeURIComponent(ZOTERO_USER_ID)}/items/top?${params.toString()}`
+    );
+
+    const excludedTypes = new Set([
+      "attachment",
+      "note",
+      "annotation"
+    ]);
+
+    let items = arr(rawItems)
+      .map(normalizeZoteroItem)
+      .filter((item) => item.key && !excludedTypes.has(item.itemType));
+
+    if (q) {
+      items = items.filter((item) => {
+        const haystack = [
+          item.title,
+          item.creators,
+          item.publicationTitle,
+          item.DOI,
+          item.tags.join(" ")
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        return haystack.includes(q);
+      });
+    }
+
+    res.json({
+      userId: ZOTERO_USER_ID,
+      count: items.length,
+      items
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: { message: `Could not load Zotero library: ${error.message}` }
+    });
+  }
+});
+
+// Load one Zotero article, its child notes/attachments, and indexed PDF text when available.
+app.get("/api/zotero/article/:itemKey", async (req, res) => {
+  try {
+    const itemKey = cleanText(req.params.itemKey || "", 40);
+
+    if (!/^[A-Za-z0-9]+$/.test(itemKey)) {
+      return res.status(400).json({
+        error: { message: "Invalid Zotero item key." }
+      });
+    }
+
+    const item = await zoteroFetchJson(
+      `/users/${encodeURIComponent(ZOTERO_USER_ID)}/items/${encodeURIComponent(itemKey)}`
+    );
+
+    let children = [];
+    try {
+      children = await zoteroFetchJson(
+        `/users/${encodeURIComponent(ZOTERO_USER_ID)}/items/${encodeURIComponent(itemKey)}/children?limit=100&format=json`
+      );
+    } catch (_) {
+      children = [];
+    }
+
+    const notes = arr(children).filter(
+      (child) => child?.data?.itemType === "note"
+    );
+
+    const attachments = arr(children).filter(
+      (child) => child?.data?.itemType === "attachment"
+    );
+
+    const pdfAttachment =
+      attachments.find((attachment) =>
+        /pdf/i.test(
+          `${attachment?.data?.contentType || ""} ${attachment?.data?.filename || ""} ${attachment?.data?.title || ""}`
+        )
+      ) || attachments[0] || null;
+
+    let fullText = "";
+    let fullTextMeta = null;
+
+    if (pdfAttachment?.key) {
+      try {
+        fullTextMeta = await zoteroFetchJson(
+          `/users/${encodeURIComponent(ZOTERO_USER_ID)}/items/${encodeURIComponent(pdfAttachment.key)}/fulltext`
+        );
+
+        fullText = cleanText(fullTextMeta?.content || "", 30000);
+      } catch (_) {
+        fullText = "";
+        fullTextMeta = null;
+      }
+    }
+
+    const normalized = normalizeZoteroItem(item);
+    const context = buildZoteroArticleContext({
+      item,
+      notes,
+      attachment: pdfAttachment,
+      fullText
+    });
+
+    res.json({
+      article: normalized,
+      attachment: pdfAttachment
+        ? {
+            key: pdfAttachment.key,
+            title: cleanText(
+              pdfAttachment?.data?.title || pdfAttachment?.data?.filename || "Attachment",
+              500
+            ),
+            filename: cleanText(pdfAttachment?.data?.filename || "", 500),
+            contentType: cleanText(pdfAttachment?.data?.contentType || "", 200)
+          }
+        : null,
+      fullTextAvailable: Boolean(fullText),
+      indexedPages: fullTextMeta?.indexedPages || null,
+      totalPages: fullTextMeta?.totalPages || null,
+      context
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: { message: `Could not load Zotero article: ${error.message}` }
+    });
+  }
+});
+
+
 /* -------------------------------------------------------------------------- */
 /* API: Claude chat                                                           */
 /* -------------------------------------------------------------------------- */
@@ -622,7 +900,7 @@ app.post("/api/chat", async (req, res) => {
 
 // Small route that helps you confirm the backend is alive.
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, model: ANTHROPIC_MODEL });
+  res.json({ ok: true, model: ANTHROPIC_MODEL, zoteroConfigured: Boolean(ZOTERO_USER_ID && ZOTERO_API_KEY) });
 });
 
 app.listen(PORT, () => {
