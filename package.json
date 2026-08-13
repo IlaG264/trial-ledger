@@ -1,5 +1,5 @@
 {
-  "name": "clinical-trial-evidence-assistant", //project title 
+  "name": "clinical-trial-evidence-assistant", 
   "version": "3.2.0", 
   "private": true,
   "type": "module",
