@@ -29,7 +29,7 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 
 const ZOTERO_CLIENT_KEY = process.env.ZOTERO_CLIENT_KEY || "fd92d01e52ac458a752e";
-const ZOTERO_CLIENT_SECRET = process.env.ZOTERO_CLIENT_SECRET || "";
+const ZOTERO_CLIENT_SECRET = process.env.ZOTERO_CLIENT_SECRET || "dc6a69930e7f904bac87";
 const APP_BASE_URL = String(process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const SESSION_SECRET = process.env.SESSION_SECRET || "";
 
