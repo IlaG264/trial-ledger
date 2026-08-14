@@ -851,7 +851,7 @@
       </div>
       <div class="kicker source-note">
         Registry: ClinicalTrials.gov API v2<br>
-        Literature: PubMed + Europe PMC<br>Personal library: Zotero
+        Literature: PubMed + Europe PMC<br>Personal library: Zotero OAuth
       </div>
     </header>
 
@@ -882,24 +882,25 @@
       <div class="panel-title" style="margin-bottom:10px;">
         <h3>My Zotero Library</h3>
       </div>
-
-      <div class="notice-box" style="margin-bottom:12px;">
-        <strong>Personal Zotero library connected through your private API key</strong>
-        <div class="hint" style="margin-top:4px;">
-          This prototype uses the Zotero account configured privately in Render.
-        </div>
-      </div>
       <div class="hint" style="margin-bottom:12px;">
-        Load articles from your private Zotero library, select one, and ask questions about that paper.
+        Connect your own Zotero account, then choose an article to use as evidence.
       </div>
+
+      <div class="search-row" style="align-items:center;margin-bottom:12px;">
+        <button class="btn secondary" id="connectZoteroBtn" type="button">Connect Zotero</button>
+        <button class="btn danger" id="disconnectZoteroBtn" type="button" style="display:none;">Disconnect Zotero</button>
+        <span class="hint" id="zoteroConnectionStatus">Not connected</span>
+      </div>
+
       <div class="search-row">
         <input
           class="text-input"
           id="zoteroSearchInput"
           type="text"
           placeholder="Optional: filter Zotero by title, author, DOI, or tag"
+          disabled
         />
-        <button class="btn secondary" id="loadZoteroBtn">Load Zotero articles</button>
+        <button class="btn secondary" id="loadZoteroBtn" disabled>Load Zotero articles</button>
       </div>
       <div id="zoteroError"></div>
       <div id="zoteroResultsArea"></div>
@@ -916,14 +917,13 @@
 
         <!-- Selected Zotero article. Visible in article-only mode or alongside a trial. -->
         <section class="panel" id="zoteroArticleCard" style="display:none;"></section>
-        <input id="zoteroPdfUploadInput" type="file" accept="application/pdf,.pdf" style="display:none;" />
 
         <section class="panel" id="zoteroAddPanel">
           <div class="panel-title">
             <h3>Use a Zotero article</h3>
           </div>
           <div class="hint">
-            Add or change a personal article to use as evidence with the chatbot.
+            Add or change an article from your connected Zotero account.
           </div>
           <button class="btn secondary small" id="chooseZoteroBtn" type="button">Choose from Zotero</button>
         </section>
@@ -1006,6 +1006,9 @@
       searchError: document.getElementById('searchError'),
       resultsArea: document.getElementById('resultsArea'),
 
+      connectZoteroBtn: document.getElementById('connectZoteroBtn'),
+      disconnectZoteroBtn: document.getElementById('disconnectZoteroBtn'),
+      zoteroConnectionStatus: document.getElementById('zoteroConnectionStatus'),
       zoteroSearchInput: document.getElementById('zoteroSearchInput'),
       loadZoteroBtn: document.getElementById('loadZoteroBtn'),
       zoteroError: document.getElementById('zoteroError'),
@@ -1015,7 +1018,6 @@
       primaryTrialCard: document.getElementById('primaryTrialCard'),
       comparisonTrialCard: document.getElementById('comparisonTrialCard'),
       zoteroArticleCard: document.getElementById('zoteroArticleCard'),
-      zoteroPdfUploadInput: document.getElementById('zoteroPdfUploadInput'),
       zoteroAddPanel: document.getElementById('zoteroAddPanel'),
       chooseZoteroBtn: document.getElementById('chooseZoteroBtn'),
       compareSearchPanel: document.getElementById('compareSearchPanel'),
@@ -1048,8 +1050,6 @@
 
     let selectedZoteroArticle = null;
     let selectedZoteroContext = '';
-    let selectedZoteroBaseContext = '';
-    let selectedZoteroPdfStatus = null;
 
     let primaryTrialContext = '';
     let comparisonTrialContext = '';
@@ -1744,6 +1744,66 @@ ${compactJson(r, 35000) || 'N/A'}`);
 
 
     /* ---------------------------------------------------------------------- */
+    /* Zotero connection                                                      */
+    /* ---------------------------------------------------------------------- */
+
+    let zoteroConnected = false;
+
+    function setZoteroConnectionUI(connected, userId = null){
+      zoteroConnected = connected;
+      els.connectZoteroBtn.style.display = connected ? 'none' : 'inline-flex';
+      els.disconnectZoteroBtn.style.display = connected ? 'inline-flex' : 'none';
+      els.zoteroSearchInput.disabled = !connected;
+      els.loadZoteroBtn.disabled = !connected;
+      els.zoteroConnectionStatus.textContent = connected
+        ? `Connected to Zotero${userId ? ` · User ${userId}` : ''}`
+        : 'Not connected';
+    }
+
+    async function checkZoteroConnection(){
+      try{
+        const response = await fetch('/api/zotero/status');
+        const data = await response.json();
+        setZoteroConnectionUI(Boolean(data.connected), data.userId || null);
+      }catch(_){
+        setZoteroConnectionUI(false);
+      }
+    }
+
+    function connectZotero(){
+      const popup = window.open(
+        '/api/zotero/connect',
+        'zoteroLogin',
+        'width=720,height=760,resizable=yes,scrollbars=yes'
+      );
+
+      if(!popup){
+        showError(els.zoteroError, 'Your browser blocked the Zotero login popup. Allow popups for this site and try again.');
+      }
+    }
+
+    async function disconnectZotero(){
+      try{
+        await fetch('/api/zotero/logout', {method:'POST'});
+      }finally{
+        selectedZoteroArticle = null;
+        selectedZoteroContext = '';
+        els.zoteroResultsArea.innerHTML = '';
+        renderZoteroArticleCard();
+        setZoteroConnectionUI(false);
+      }
+    }
+
+    window.addEventListener('message', async (event) => {
+      if(event.origin !== window.location.origin) return;
+      if(event.data?.type !== 'zotero-connected') return;
+
+      await checkZoteroConnection();
+      clearError(els.zoteroError);
+      if(zoteroConnected) loadZoteroLibrary();
+    });
+
+    /* ---------------------------------------------------------------------- */
     /* Zotero personal library                                                */
     /* ---------------------------------------------------------------------- */
 
@@ -1817,6 +1877,11 @@ ${compactJson(r, 35000) || 'N/A'}`);
 
     async function loadZoteroLibrary(){
       clearError(els.zoteroError);
+
+      if(!zoteroConnected){
+        showError(els.zoteroError, 'Connect your Zotero account first.');
+        return;
+      }
       els.zoteroResultsArea.innerHTML = '<div class="notice-box"><span class="spinner"></span>Loading your Zotero library...</div>';
       els.loadZoteroBtn.disabled = true;
 
@@ -1860,34 +1925,6 @@ ${compactJson(r, 35000) || 'N/A'}`);
 
         <div class="results-pill posted">✓ Personal evidence selected</div>
 
-        <div style="margin-top:12px;">
-          ${
-            selectedZoteroPdfStatus?.fullTextAvailable
-              ? `<div class="notice-box">
-                   <strong>✓ PDF text available</strong>
-                   <div class="hint" style="margin-top:4px;">
-                     ${
-                       selectedZoteroPdfStatus.fullTextSource === 'zotero-indexed'
-                         ? 'Using Zotero indexed full text.'
-                         : selectedZoteroPdfStatus.fullTextSource === 'zotero-pdf'
-                           ? 'The actual PDF attached to this Zotero citation was downloaded and read.'
-                           : 'Using manually uploaded PDF text.'
-                     }
-                     ${selectedZoteroPdfStatus.totalPages ? ` ${esc(String(selectedZoteroPdfStatus.totalPages))} page(s) detected.` : ''}
-                   </div>
-                 </div>`
-              : `<div class="notice-box">
-                   <strong>PDF text not available yet</strong>
-                   <div class="hint" style="margin-top:4px;">
-                     ${esc(selectedZoteroPdfStatus?.pdfStatusMessage || 'The attachment could not be converted to readable text automatically.')}
-                   </div>
-                   <button class="btn secondary small" id="uploadZoteroPdfBtn" type="button" style="margin-top:10px;">
-                     Upload PDF manually
-                   </button>
-                 </div>`
-          }
-        </div>
-
         <div class="trial-card-actions">
           <button class="btn danger small" id="removeZoteroBtn" type="button">Remove article</button>
         </div>
@@ -1895,8 +1932,6 @@ ${compactJson(r, 35000) || 'N/A'}`);
 
       els.zoteroArticleCard.style.display = 'block';
       els.zoteroArticleCard.querySelector('#removeZoteroBtn').addEventListener('click', removeZoteroArticle);
-      els.zoteroArticleCard.querySelector('#uploadZoteroPdfBtn')
-        ?.addEventListener('click',() => els.zoteroPdfUploadInput.click());
     }
 
     async function loadZoteroArticle(itemKey){
@@ -1913,14 +1948,6 @@ ${compactJson(r, 35000) || 'N/A'}`);
 
         selectedZoteroArticle = data.article || null;
         selectedZoteroContext = data.context || '';
-        selectedZoteroBaseContext = data.context || '';
-        selectedZoteroPdfStatus = {
-          fullTextAvailable: Boolean(data.fullTextAvailable),
-          fullTextSource: data.fullTextSource || 'none',
-          pdfStatusMessage: data.pdfStatusMessage || '',
-          indexedPages: data.indexedPages || null,
-          totalPages: data.totalPages || null
-        };
         chatHistory = [];
 
         renderZoteroArticleCard();
@@ -1951,8 +1978,6 @@ ${compactJson(r, 35000) || 'N/A'}`);
     function removeZoteroArticle(){
       selectedZoteroArticle = null;
       selectedZoteroContext = '';
-      selectedZoteroBaseContext = '';
-      selectedZoteroPdfStatus = null;
       chatHistory = [];
       renderZoteroArticleCard();
 
@@ -1963,75 +1988,6 @@ ${compactJson(r, 35000) || 'N/A'}`);
 
       resetChatDisplay();
       updateModeUI();
-    }
-
-
-    async function handleManualZoteroPdfUpload(event){
-      const file = event.target.files?.[0];
-      event.target.value = '';
-
-      if(!file || !selectedZoteroArticle) return;
-
-      if(file.type && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')){
-        alert('Please choose a PDF file.');
-        return;
-      }
-
-      selectedZoteroPdfStatus = {
-        fullTextAvailable:false,
-        fullTextSource:'uploading',
-        pdfStatusMessage:'Reading uploaded PDF...',
-        indexedPages:null,
-        totalPages:null
-      };
-      renderZoteroArticleCard();
-
-      try{
-        const bytes = await file.arrayBuffer();
-
-        const response = await fetch('/api/zotero/pdf-upload',{
-          method:'POST',
-          headers:{'Content-Type':'application/pdf'},
-          body:bytes
-        });
-
-        const data = await response.json();
-
-        if(!response.ok || data.error){
-          throw new Error(data.error?.message || 'Could not read the uploaded PDF.');
-        }
-
-        selectedZoteroContext = `${selectedZoteroBaseContext}
-
-## MANUALLY UPLOADED PDF FOR SELECTED ZOTERO ARTICLE
-Filename: ${file.name}
-Pages detected: ${data.pages || 'Not reported'}
-Full PDF text:
-${data.text || ''}
-`;
-
-        selectedZoteroPdfStatus = {
-          fullTextAvailable:true,
-          fullTextSource:'manual-upload',
-          pdfStatusMessage:'',
-          indexedPages:null,
-          totalPages:data.pages || null
-        };
-
-        chatHistory = [];
-        renderZoteroArticleCard();
-        resetChatDisplay();
-        updateModeUI();
-      }catch(error){
-        selectedZoteroPdfStatus = {
-          fullTextAvailable:false,
-          fullTextSource:'manual-upload-failed',
-          pdfStatusMessage:error.message,
-          indexedPages:null,
-          totalPages:null
-        };
-        renderZoteroArticleCard();
-      }
     }
 
     function chooseDifferentZoteroArticle(){
@@ -2721,7 +2677,8 @@ No evidence source is currently selected.`;
     /* Event listeners                                                        */
     /* ---------------------------------------------------------------------- */
 
-    els.zoteroPdfUploadInput.addEventListener('change',handleManualZoteroPdfUpload);
+    els.connectZoteroBtn.addEventListener('click',connectZotero);
+    els.disconnectZoteroBtn.addEventListener('click',disconnectZotero);
     els.loadZoteroBtn.addEventListener('click',loadZoteroLibrary);
     els.zoteroSearchInput.addEventListener('keydown',(event) => {
       if(event.key === 'Enter') loadZoteroLibrary();
@@ -2748,6 +2705,7 @@ No evidence source is currently selected.`;
 
     // Set initial suggested questions when the page first loads.
     renderSuggestions();
+    checkZoteroConnection();
   </script>
 </body>
 </html>

@@ -11,7 +11,11 @@ services:
         sync: false
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5
-      - key: ZOTERO_USER_ID
-        value: "21263291"
-      - key: ZOTERO_API_KEY
+      - key: ZOTERO_CLIENT_KEY
+        value: "fd92d01e52ac458a752e"
+      - key: ZOTERO_CLIENT_SECRET
+        sync: false
+      - key: APP_BASE_URL
+        value: "https://trial-ledger.onrender.com"
+      - key: SESSION_SECRET
         sync: false
