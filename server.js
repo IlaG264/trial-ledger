@@ -1,16 +1,3 @@
-/*
-  Clinical Trial Evidence Assistant — BACKEND
-  ------------------------------------------------------------
-  This file runs on the server (Render or your own computer).
-
-  Main jobs:
-  1) Serve the frontend from /public.
-  2) Search PubMed and Europe PMC for related papers.
-  3) Retrieve legal open-access full text when Europe PMC provides it.
-  4) Keep the Anthropic API key hidden.
-  5) Send evidence-grounded questions to Claude.
-*/
-
 import express from "express";
 import dotenv from "dotenv";
 import path from "path";
@@ -24,69 +11,121 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Private server-side settings. Never place ANTHROPIC_API_KEY in index.html.
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
+const ANTHROPIC_MODEL =
+  process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 
-const ZOTERO_CLIENT_KEY = process.env.ZOTERO_CLIENT_KEY || "fd92d01e52ac458a752e";
-const ZOTERO_CLIENT_SECRET = process.env.ZOTERO_CLIENT_SECRET || "dc6a69930e7f904bac87";
-const APP_BASE_URL = String(process.env.APP_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
-const SESSION_SECRET = process.env.SESSION_SECRET || "";
+const ZOTERO_CLIENT_KEY =
+  process.env.ZOTERO_CLIENT_KEY || "fd92d01e52ac458a752e";
 
-const ZOTERO_API_BASE = "https://api.zotero.org";
-const ZOTERO_REQUEST_URL = "https://www.zotero.org/oauth/request";
-const ZOTERO_ACCESS_URL = "https://www.zotero.org/oauth/access";
-const ZOTERO_AUTHORIZE_URL = "https://www.zotero.org/oauth/authorize";
+const ZOTERO_CLIENT_SECRET =
+  process.env.ZOTERO_CLIENT_SECRET || "";
+
+const APP_BASE_URL =
+  (process.env.APP_BASE_URL || "http://localhost:3000")
+    .replace(/\/$/, "");
+
+const SESSION_SECRET =
+  process.env.SESSION_SECRET || "";
+
+const ZOTERO_API_BASE =
+  "https://api.zotero.org";
+
+const ZOTERO_REQUEST_URL =
+  "https://www.zotero.org/oauth/request";
+
+const ZOTERO_ACCESS_URL =
+  "https://www.zotero.org/oauth/access";
+
+const ZOTERO_AUTHORIZE_URL =
+  "https://www.zotero.org/oauth/authorize";
 
 const ZOTERO_AUTH_COOKIE = "zotero_auth";
 const ZOTERO_OAUTH_COOKIE = "zotero_oauth";
-const IS_PRODUCTION = APP_BASE_URL.startsWith("https://");
 
-// ES modules do not create __dirname automatically, so we recreate it here.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const IS_PRODUCTION =
+  APP_BASE_URL.startsWith("https://");
 
-// PubMed article records are returned as XML. This parser turns XML into JS objects.
+const __filename =
+  fileURLToPath(import.meta.url);
+
+const __dirname =
+  path.dirname(__filename);
+
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
   textNodeName: "#text"
 });
 
-// trialContext can be large when a study has posted results.
-app.use(express.json({ limit: "20mb" }));
+app.use(
+  express.json({
+    limit: "20mb"
+  })
+);
 
-// Serve public/index.html and other frontend files.
-app.use(express.static(path.join(__dirname, "public")));
+app.use(
+  express.static(
+    path.join(__dirname, "public")
+  )
+);
 
 
-/* -------------------------------------------------------------------------- */
-/* Small helper functions                                                     */
-/* -------------------------------------------------------------------------- */
+// Helpers
 
-// Guarantee that a value is an array. XML parsers sometimes return one object
-// for one item and an array for multiple items.
 function arr(value) {
   if (!value) return [];
-  return Array.isArray(value) ? value : [value];
+
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  return [value];
 }
 
-// Pull readable text out of strings, numbers, arrays, and parsed XML objects.
+
 function textOf(value) {
-  if (value === undefined || value === null) return "";
-  if (typeof value === "string" || typeof value === "number") return String(value);
-  if (Array.isArray(value)) return value.map(textOf).filter(Boolean).join(" ");
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return "";
+  }
+
+  if (
+    typeof value === "string" ||
+    typeof value === "number"
+  ) {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map(textOf)
+      .filter(Boolean)
+      .join(" ");
+  }
 
   if (typeof value === "object") {
-    if (value["#text"] !== undefined) return textOf(value["#text"]);
-    return Object.values(value).map(textOf).filter(Boolean).join(" ");
+    if (value["#text"] !== undefined) {
+      return textOf(value["#text"]);
+    }
+
+    return Object
+      .values(value)
+      .map(textOf)
+      .filter(Boolean)
+      .join(" ");
   }
 
   return "";
 }
 
-// Normalize spaces and place a safe character limit on long evidence text.
-function cleanText(text, maxLen = 6000) {
+
+function cleanText(
+  text,
+  maxLen = 6000
+) {
   return String(text || "")
     .replace(/\s+/g, " ")
     .replace(/\[\s+/g, "[")
@@ -95,16 +134,36 @@ function cleanText(text, maxLen = 6000) {
     .slice(0, maxLen);
 }
 
-// Convert Europe PMC full-text XML into readable text. This intentionally
-// removes references and tables to keep the prompt useful and reasonably sized.
-function stripXmlToText(xml, maxLen = 9000) {
+
+// Europe PMC returns full text as XML.
+// This removes XML tags, references, and tables.
+
+function stripXmlToText(
+  xml,
+  maxLen = 9000
+) {
   return cleanText(
     String(xml || "")
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<ref-list[\s\S]*?<\/ref-list>/gi, " ")
-      .replace(/<table-wrap[\s\S]*?<\/table-wrap>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
+      .replace(
+        /<script[\s\S]*?<\/script>/gi,
+        " "
+      )
+      .replace(
+        /<style[\s\S]*?<\/style>/gi,
+        " "
+      )
+      .replace(
+        /<ref-list[\s\S]*?<\/ref-list>/gi,
+        " "
+      )
+      .replace(
+        /<table-wrap[\s\S]*?<\/table-wrap>/gi,
+        " "
+      )
+      .replace(
+        /<[^>]+>/g,
+        " "
+      )
       .replace(/&lt;/g, "<")
       .replace(/&gt;/g, ">")
       .replace(/&amp;/g, "&")
@@ -114,878 +173,2225 @@ function stripXmlToText(xml, maxLen = 9000) {
   );
 }
 
-// Split a title into useful words for a simple relevance score.
+
 function titleTokens(text) {
   const stopWords = new Set([
-    "the", "and", "for", "with", "from", "into", "that", "this", "study",
-    "trial", "randomized", "clinical", "comparison", "compared", "versus"
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "into",
+    "that",
+    "this",
+    "study",
+    "trial",
+    "randomized",
+    "clinical",
+    "comparison",
+    "compared",
+    "versus"
   ]);
 
   return String(text || "")
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(
+      /[^a-z0-9\s]/g,
+      " "
+    )
     .split(/\s+/)
-    .filter((word) => word.length >= 4 && !stopWords.has(word));
+    .filter(
+      (word) =>
+        word.length >= 4 &&
+        !stopWords.has(word)
+    );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Build search queries                                                       */
-/* -------------------------------------------------------------------------- */
 
-function buildPubMedQuery({ nctId, briefTitle, officialTitle }) {
+// Literature search queries
+
+function buildPubMedQuery({
+  nctId,
+  briefTitle,
+  officialTitle
+}) {
   const parts = [];
 
-  if (nctId) parts.push(`${nctId}[All Fields]`);
-  if (briefTitle) parts.push(`"${briefTitle}"[Title/Abstract]`);
-  if (officialTitle && officialTitle !== briefTitle) {
-    parts.push(`"${officialTitle}"[Title/Abstract]`);
+  if (nctId) {
+    parts.push(
+      `${nctId}[All Fields]`
+    );
   }
 
-  return parts.join(" OR ") || briefTitle || officialTitle || nctId;
+  if (briefTitle) {
+    parts.push(
+      `"${briefTitle}"[Title/Abstract]`
+    );
+  }
+
+  if (
+    officialTitle &&
+    officialTitle !== briefTitle
+  ) {
+    parts.push(
+      `"${officialTitle}"[Title/Abstract]`
+    );
+  }
+
+  return (
+    parts.join(" OR ") ||
+    briefTitle ||
+    officialTitle ||
+    nctId
+  );
 }
 
-function buildEuropeQuery({ nctId, briefTitle, officialTitle }) {
+
+function buildEuropeQuery({
+  nctId,
+  briefTitle,
+  officialTitle
+}) {
   const parts = [];
 
-  if (nctId) parts.push(`"${nctId}"`);
-  if (briefTitle) parts.push(`"${briefTitle}"`);
-  if (officialTitle && officialTitle !== briefTitle) parts.push(`"${officialTitle}"`);
+  if (nctId) {
+    parts.push(`"${nctId}"`);
+  }
 
-  return parts.join(" OR ") || briefTitle || officialTitle || nctId;
+  if (briefTitle) {
+    parts.push(`"${briefTitle}"`);
+  }
+
+  if (
+    officialTitle &&
+    officialTitle !== briefTitle
+  ) {
+    parts.push(
+      `"${officialTitle}"`
+    );
+  }
+
+  return (
+    parts.join(" OR ") ||
+    briefTitle ||
+    officialTitle ||
+    nctId
+  );
 }
+
 
 function ncbiParams() {
   return new URLSearchParams({
-    tool: "clinical-trial-evidence-assistant"
+    tool:
+      "clinical-trial-evidence-assistant"
   });
 }
 
-/* -------------------------------------------------------------------------- */
-/* Network helpers                                                            */
-/* -------------------------------------------------------------------------- */
+
+// HTTP helpers
 
 async function fetchJson(url) {
-  const response = await fetch(url, {
-    headers: { accept: "application/json" }
-  });
+  const response =
+    await fetch(url, {
+      headers: {
+        accept:
+          "application/json"
+      }
+    });
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    throw new Error(
+      `Request failed with status ${response.status}`
+    );
   }
 
   return response.json();
 }
 
+
 async function fetchText(url) {
-  const response = await fetch(url, {
-    headers: { accept: "application/xml,text/xml,text/plain,*/*" }
-  });
+  const response =
+    await fetch(url, {
+      headers: {
+        accept:
+          "application/xml,text/xml,text/plain,*/*"
+      }
+    });
 
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    throw new Error(
+      `Request failed with status ${response.status}`
+    );
   }
 
   return response.text();
 }
 
-/* -------------------------------------------------------------------------- */
-/* PubMed                                                                     */
-/* -------------------------------------------------------------------------- */
 
-// First search PubMed for article IDs.
+// PubMed
+
 async function searchPubMed(query) {
   if (!query) return [];
 
   const params = ncbiParams();
-  params.set("db", "pubmed");
-  params.set("term", query);
-  params.set("retmode", "json");
-  params.set("retmax", "10");
-  params.set("sort", "relevance");
 
-  const url = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?${params.toString()}`;
-  const data = await fetchJson(url);
+  params.set(
+    "db",
+    "pubmed"
+  );
 
-  return data.esearchresult?.idlist || [];
+  params.set(
+    "term",
+    query
+  );
+
+  params.set(
+    "retmode",
+    "json"
+  );
+
+  params.set(
+    "retmax",
+    "10"
+  );
+
+  params.set(
+    "sort",
+    "relevance"
+  );
+
+  const url =
+    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?" +
+    params.toString();
+
+  const data =
+    await fetchJson(url);
+
+  return (
+    data.esearchresult?.idlist ||
+    []
+  );
 }
 
-// Turn one parsed PubMed XML article into a clean object used by the app.
-function parsePubMedArticle(article) {
-  const med = article.MedlineCitation || {};
-  const pub = article.PubmedData || {};
-  const art = med.Article || {};
-  const journal = art.Journal || {};
-  const pubDate = journal.JournalIssue?.PubDate || {};
-  const ids = arr(pub.ArticleIdList?.ArticleId);
 
-  const idByType = (type) => {
-    const found = ids.find(
-      (item) => String(item?.["@_IdType"] || "").toLowerCase() === type.toLowerCase()
+function parsePubMedArticle(
+  article
+) {
+  const med =
+    article.MedlineCitation || {};
+
+  const pub =
+    article.PubmedData || {};
+
+  const art =
+    med.Article || {};
+
+  const journal =
+    art.Journal || {};
+
+  const pubDate =
+    journal.JournalIssue?.PubDate ||
+    {};
+
+  const ids =
+    arr(
+      pub.ArticleIdList?.ArticleId
     );
-    return textOf(found);
-  };
 
-  const pmid = textOf(med.PMID);
+  function idByType(type) {
+    const found =
+      ids.find((item) => {
+        const idType =
+          String(
+            item?.["@_IdType"] ||
+            ""
+          ).toLowerCase();
+
+        return (
+          idType ===
+          type.toLowerCase()
+        );
+      });
+
+    return textOf(found);
+  }
+
+  const pmid =
+    textOf(med.PMID);
 
   return {
     sourceLabel: "PubMed",
     source: "MED",
     id: pmid,
-    pmid,
-    pmcid: idByType("pmc"),
-    doi: idByType("doi"),
-    title: cleanText(textOf(art.ArticleTitle), 700),
-    journal: cleanText(textOf(journal.Title), 300),
-    year: textOf(pubDate.Year) || textOf(pubDate.MedlineDate).slice(0, 4),
-    abstract: cleanText(textOf(art.Abstract?.AbstractText), 6000),
-    url: pmid ? `https://pubmed.ncbi.nlm.nih.gov/${pmid}/` : "",
+    pmid: pmid,
+
+    pmcid:
+      idByType("pmc"),
+
+    doi:
+      idByType("doi"),
+
+    title:
+      cleanText(
+        textOf(
+          art.ArticleTitle
+        ),
+        700
+      ),
+
+    journal:
+      cleanText(
+        textOf(
+          journal.Title
+        ),
+        300
+      ),
+
+    year:
+      textOf(pubDate.Year) ||
+      textOf(
+        pubDate.MedlineDate
+      ).slice(0, 4),
+
+    abstract:
+      cleanText(
+        textOf(
+          art.Abstract
+            ?.AbstractText
+        ),
+        6000
+      ),
+
+    url:
+      pmid
+        ? `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`
+        : "",
+
     isOpenAccess: false,
     hasFullText: false,
-    openAccessFullTextFound: false,
+    openAccessFullTextFound:
+      false,
+
     fullTextSnippet: "",
     fullTextUrl: ""
   };
 }
 
-// Use EFetch to retrieve complete PubMed article metadata/abstracts for the IDs.
-async function fetchPubMedArticles(ids) {
-  if (!ids.length) return [];
 
-  const params = ncbiParams();
-  params.set("db", "pubmed");
-  params.set("id", ids.join(","));
-  params.set("retmode", "xml");
+async function fetchPubMedArticles(
+  ids
+) {
+  if (!ids.length) {
+    return [];
+  }
 
-  const url = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?${params.toString()}`;
-  const xml = await fetchText(url);
-  const parsed = xmlParser.parse(xml);
+  const params =
+    ncbiParams();
 
-  return arr(parsed.PubmedArticleSet?.PubmedArticle)
-    .map(parsePubMedArticle)
-    .filter((article) => article.title || article.abstract || article.pmid);
+  params.set(
+    "db",
+    "pubmed"
+  );
+
+  params.set(
+    "id",
+    ids.join(",")
+  );
+
+  params.set(
+    "retmode",
+    "xml"
+  );
+
+  const url =
+    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?" +
+    params.toString();
+
+  const xml =
+    await fetchText(url);
+
+  const parsed =
+    xmlParser.parse(xml);
+
+  return arr(
+    parsed
+      .PubmedArticleSet
+      ?.PubmedArticle
+  )
+    .map(
+      parsePubMedArticle
+    )
+    .filter(
+      (article) =>
+        article.title ||
+        article.abstract ||
+        article.pmid
+    );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Europe PMC                                                                 */
-/* -------------------------------------------------------------------------- */
+
+// Europe PMC
 
 function parseEuropeArticle(item) {
   return {
-    sourceLabel: "Europe PMC",
-    source: item.source || "",
-    id: item.id || "",
-    pmid: item.pmid || (item.source === "MED" ? item.id : ""),
-    pmcid: item.pmcid || "",
-    doi: item.doi || "",
-    title: cleanText(item.title, 700),
-    journal: cleanText(item.journalTitle || item.journalInfo?.journal?.title, 300),
-    year: item.pubYear || "",
-    abstract: cleanText(item.abstractText, 6000),
-    url: item.pmid
-      ? `https://pubmed.ncbi.nlm.nih.gov/${item.pmid}/`
-      : (item.doi ? `https://doi.org/${item.doi}` : ""),
-    isOpenAccess: String(item.isOpenAccess || "").toUpperCase() === "Y",
-    hasFullText: String(item.hasFullText || "").toUpperCase() === "Y",
-    openAccessFullTextFound: false,
+    sourceLabel:
+      "Europe PMC",
+
+    source:
+      item.source || "",
+
+    id:
+      item.id || "",
+
+    pmid:
+      item.pmid ||
+      (
+        item.source === "MED"
+          ? item.id
+          : ""
+      ),
+
+    pmcid:
+      item.pmcid || "",
+
+    doi:
+      item.doi || "",
+
+    title:
+      cleanText(
+        item.title,
+        700
+      ),
+
+    journal:
+      cleanText(
+        item.journalTitle ||
+        item.journalInfo
+          ?.journal
+          ?.title,
+        300
+      ),
+
+    year:
+      item.pubYear || "",
+
+    abstract:
+      cleanText(
+        item.abstractText,
+        6000
+      ),
+
+    url:
+      item.pmid
+        ? `https://pubmed.ncbi.nlm.nih.gov/${item.pmid}/`
+        : item.doi
+          ? `https://doi.org/${item.doi}`
+          : "",
+
+    isOpenAccess:
+      String(
+        item.isOpenAccess ||
+        ""
+      ).toUpperCase() === "Y",
+
+    hasFullText:
+      String(
+        item.hasFullText ||
+        ""
+      ).toUpperCase() === "Y",
+
+    openAccessFullTextFound:
+      false,
+
     fullTextSnippet: "",
     fullTextUrl: ""
   };
 }
 
-async function searchEuropePMC(query) {
-  if (!query) return [];
 
-  const params = new URLSearchParams({
-    query,
-    format: "json",
-    pageSize: "10",
-    resultType: "core"
-  });
+async function searchEuropePMC(
+  query
+) {
+  if (!query) {
+    return [];
+  }
 
-  const url = `https://www.ebi.ac.uk/europepmc/webservices/rest/search?${params.toString()}`;
-  const data = await fetchJson(url);
+  const params =
+    new URLSearchParams({
+      query: query,
+      format: "json",
+      pageSize: "10",
+      resultType: "core"
+    });
 
-  return arr(data.resultList?.result).map(parseEuropeArticle);
+  const url =
+    "https://www.ebi.ac.uk/europepmc/webservices/rest/search?" +
+    params.toString();
+
+  const data =
+    await fetchJson(url);
+
+  return arr(
+    data.resultList?.result
+  ).map(
+    parseEuropeArticle
+  );
 }
 
-// Only official Europe PMC full-text endpoints are tried. This does not bypass paywalls.
-async function fetchEuropeFullText(article) {
+
+async function fetchEuropeFullText(
+  article
+) {
   const candidates = [];
 
   if (article.pmcid) {
-    const pmcid = String(article.pmcid).replace(/^PMC/i, "PMC");
+    const pmcid =
+      String(
+        article.pmcid
+      ).replace(
+        /^PMC/i,
+        "PMC"
+      );
+
     candidates.push(
-      `https://www.ebi.ac.uk/europepmc/webservices/rest/${encodeURIComponent(pmcid)}/fullTextXML`
+      "https://www.ebi.ac.uk/europepmc/webservices/rest/" +
+      encodeURIComponent(
+        pmcid
+      ) +
+      "/fullTextXML"
     );
   }
 
-  if (article.source && article.id) {
+  if (
+    article.source &&
+    article.id
+  ) {
     candidates.push(
-      `https://www.ebi.ac.uk/europepmc/webservices/rest/${encodeURIComponent(article.source)}/${encodeURIComponent(article.id)}/fullTextXML`
+      "https://www.ebi.ac.uk/europepmc/webservices/rest/" +
+      encodeURIComponent(
+        article.source
+      ) +
+      "/" +
+      encodeURIComponent(
+        article.id
+      ) +
+      "/fullTextXML"
     );
   }
 
   if (article.pmid) {
     candidates.push(
-      `https://www.ebi.ac.uk/europepmc/webservices/rest/MED/${encodeURIComponent(article.pmid)}/fullTextXML`
+      "https://www.ebi.ac.uk/europepmc/webservices/rest/MED/" +
+      encodeURIComponent(
+        article.pmid
+      ) +
+      "/fullTextXML"
     );
   }
 
-  for (const url of [...new Set(candidates)]) {
-    try {
-      const xml = await fetchText(url);
-      const text = stripXmlToText(xml, 9000);
+  const uniqueUrls =
+    [...new Set(candidates)];
 
-      if (text.length > 500) {
-        return { fullTextSnippet: text, fullTextUrl: url };
+  for (
+    const url of uniqueUrls
+  ) {
+    try {
+      const xml =
+        await fetchText(url);
+
+      const text =
+        stripXmlToText(
+          xml,
+          9000
+        );
+
+      if (
+        text.length > 500
+      ) {
+        return {
+          fullTextSnippet:
+            text,
+
+          fullTextUrl:
+            url
+        };
       }
-    } catch (_) {
-      // If one official endpoint fails, try the next candidate.
+    } catch (error) {
+      // Try next URL.
     }
   }
 
-  return { fullTextSnippet: "", fullTextUrl: "" };
+  return {
+    fullTextSnippet: "",
+    fullTextUrl: ""
+  };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Combine and rank literature                                                */
-/* -------------------------------------------------------------------------- */
+
+// Combine and rank literature
 
 function articleKey(article) {
-  if (article.pmid) return `pmid:${String(article.pmid).toLowerCase()}`;
-  if (article.pmcid) return `pmcid:${String(article.pmcid).toLowerCase()}`;
-  if (article.doi) return `doi:${String(article.doi).toLowerCase()}`;
-  return `title:${String(article.title || "").toLowerCase().slice(0, 160)}`;
+  if (article.pmid) {
+    return (
+      "pmid:" +
+      String(
+        article.pmid
+      ).toLowerCase()
+    );
+  }
+
+  if (article.pmcid) {
+    return (
+      "pmcid:" +
+      String(
+        article.pmcid
+      ).toLowerCase()
+    );
+  }
+
+  if (article.doi) {
+    return (
+      "doi:" +
+      String(
+        article.doi
+      ).toLowerCase()
+    );
+  }
+
+  return (
+    "title:" +
+    String(
+      article.title || ""
+    )
+      .toLowerCase()
+      .slice(0, 160)
+  );
 }
 
-function mergeArticles(...groups) {
-  const map = new Map();
 
-  for (const group of groups) {
-    for (const article of group) {
-      const key = articleKey(article);
-      if (!key || key === "title:") continue;
+function mergeArticles(
+  ...groups
+) {
+  const map =
+    new Map();
 
-      const existing = map.get(key) || {};
+  for (
+    const group of groups
+  ) {
+    for (
+      const article of group
+    ) {
+      const key =
+        articleKey(article);
 
-      // Preserve useful fields from either database instead of losing them.
-      map.set(key, {
-        ...existing,
-        ...article,
-        title: article.title || existing.title || "",
-        abstract: article.abstract || existing.abstract || "",
-        pmid: article.pmid || existing.pmid || "",
-        pmcid: article.pmcid || existing.pmcid || "",
-        doi: article.doi || existing.doi || "",
-        journal: article.journal || existing.journal || "",
-        year: article.year || existing.year || "",
-        url: article.url || existing.url || "",
-        isOpenAccess: Boolean(article.isOpenAccess || existing.isOpenAccess),
-        hasFullText: Boolean(article.hasFullText || existing.hasFullText)
-      });
+      if (
+        !key ||
+        key === "title:"
+      ) {
+        continue;
+      }
+
+      const existing =
+        map.get(key) || {};
+
+      map.set(
+        key,
+        {
+          ...existing,
+          ...article,
+
+          title:
+            article.title ||
+            existing.title ||
+            "",
+
+          abstract:
+            article.abstract ||
+            existing.abstract ||
+            "",
+
+          pmid:
+            article.pmid ||
+            existing.pmid ||
+            "",
+
+          pmcid:
+            article.pmcid ||
+            existing.pmcid ||
+            "",
+
+          doi:
+            article.doi ||
+            existing.doi ||
+            "",
+
+          journal:
+            article.journal ||
+            existing.journal ||
+            "",
+
+          year:
+            article.year ||
+            existing.year ||
+            "",
+
+          url:
+            article.url ||
+            existing.url ||
+            "",
+
+          isOpenAccess:
+            Boolean(
+              article.isOpenAccess ||
+              existing.isOpenAccess
+            ),
+
+          hasFullText:
+            Boolean(
+              article.hasFullText ||
+              existing.hasFullText
+            )
+        }
+      );
     }
   }
 
-  return [...map.values()];
+  return [
+    ...map.values()
+  ];
 }
 
-// Rank likely trial-related papers above weaker title matches.
-function scoreArticle(article, trial) {
-  const haystack = `${article.title || ""} ${article.abstract || ""}`.toLowerCase();
+
+function scoreArticle(
+  article,
+  trial
+) {
+  const haystack =
+    (
+      `${article.title || ""} ` +
+      `${article.abstract || ""}`
+    ).toLowerCase();
+
   let score = 0;
 
-  if (trial.nctId && haystack.includes(trial.nctId.toLowerCase())) score += 100;
-  if (article.abstract) score += 8;
-  if (article.pmcid || article.isOpenAccess) score += 5;
+  if (
+    trial.nctId &&
+    haystack.includes(
+      trial.nctId.toLowerCase()
+    )
+  ) {
+    score += 100;
+  }
 
-  const tokens = new Set([
-    ...titleTokens(trial.briefTitle),
-    ...titleTokens(trial.officialTitle)
-  ]);
+  if (article.abstract) {
+    score += 8;
+  }
 
-  for (const token of tokens) {
-    if (haystack.includes(token)) score += 2;
+  if (
+    article.pmcid ||
+    article.isOpenAccess
+  ) {
+    score += 5;
+  }
+
+  const tokens =
+    new Set([
+      ...titleTokens(
+        trial.briefTitle
+      ),
+
+      ...titleTokens(
+        trial.officialTitle
+      )
+    ]);
+
+  for (
+    const token of tokens
+  ) {
+    if (
+      haystack.includes(token)
+    ) {
+      score += 2;
+    }
   }
 
   return score;
 }
 
-function buildLiteratureContext(articles) {
+
+function buildLiteratureContext(
+  articles
+) {
   if (!articles.length) {
-    return "## LITERATURE SEARCH\nNo related PubMed abstract or legal open-access full-text source was found automatically.";
+    return (
+      "## LITERATURE SEARCH\n" +
+      "No related PubMed abstract or legal open-access full-text source was found automatically."
+    );
   }
 
-  const blocks = articles.map((article, index) => {
-    const lines = [];
+  const blocks =
+    articles.map(
+      (
+        article,
+        index
+      ) => {
+        const lines = [];
 
-    lines.push(`### ARTICLE ${index + 1}`);
-    lines.push(`Source: ${article.sourceLabel || "Literature"}`);
-    if (article.title) lines.push(`Title: ${article.title}`);
-    if (article.pmid) lines.push(`PMID: ${article.pmid}`);
-    if (article.pmcid) lines.push(`PMCID: ${article.pmcid}`);
-    if (article.doi) lines.push(`DOI: ${article.doi}`);
-    if (article.journal || article.year) {
-      lines.push(`Journal/year: ${[article.journal, article.year].filter(Boolean).join(" / ")}`);
-    }
-    if (article.abstract) lines.push(`Abstract: ${article.abstract}`);
-    if (article.fullTextSnippet) {
-      lines.push(`Legal open-access full-text snippet: ${article.fullTextSnippet}`);
-    } else {
-      lines.push(
-        "Full text: Not retrieved through a legal open-access endpoint. Do not claim to have read paywalled full text."
-      );
-    }
-
-    return lines.join("\n");
-  });
-
-  return `## LITERATURE SEARCH\n${blocks.join("\n\n")}`;
-}
-
-/* -------------------------------------------------------------------------- */
-/* API: related literature                                                    */
-/* -------------------------------------------------------------------------- */
-
-app.post("/api/literature", async (req, res) => {
-  try {
-    const {
-      nctId = "",
-      briefTitle = "",
-      officialTitle = ""
-    } = req.body || {};
-
-    const trial = {
-      nctId: cleanText(nctId, 30),
-      briefTitle: cleanText(briefTitle, 700),
-      officialTitle: cleanText(officialTitle, 1000)
-    };
-
-    if (!trial.nctId && !trial.briefTitle && !trial.officialTitle) {
-      return res.status(400).json({
-        error: { message: "Missing nctId, briefTitle, or officialTitle." }
-      });
-    }
-
-    const pubMedQuery = buildPubMedQuery(trial);
-    const europeQuery = buildEuropeQuery(trial);
-
-    // Search both databases. allSettled means one database can still work even
-    // if the other one temporarily fails.
-    const [pubmedSearchResult, europeSearchResult] = await Promise.allSettled([
-      searchPubMed(pubMedQuery),
-      searchEuropePMC(europeQuery)
-    ]);
-
-    const pubmedIds = pubmedSearchResult.status === "fulfilled"
-      ? pubmedSearchResult.value
-      : [];
-
-    const europeArticles = europeSearchResult.status === "fulfilled"
-      ? europeSearchResult.value
-      : [];
-
-    let pubmedArticles = [];
-    if (pubmedIds.length) {
-      try {
-        pubmedArticles = await fetchPubMedArticles(pubmedIds);
-      } catch (_) {
-        pubmedArticles = [];
-      }
-    }
-
-    let articles = mergeArticles(pubmedArticles, europeArticles)
-      .map((article) => ({
-        ...article,
-        relevanceScore: scoreArticle(article, trial)
-      }))
-      .sort((a, b) => b.relevanceScore - a.relevanceScore)
-      .slice(0, 8);
-
-    // Try full text only where the metadata suggests an official OA copy may exist.
-    articles = await Promise.all(
-      articles.map(async (article) => {
-        const shouldTryFullText = Boolean(
-          article.pmcid ||
-          article.isOpenAccess ||
-          article.hasFullText ||
-          article.source === "PMC"
+        lines.push(
+          `### ARTICLE ${index + 1}`
         );
 
-        if (!shouldTryFullText) return article;
+        lines.push(
+          `Source: ${
+            article.sourceLabel ||
+            "Literature"
+          }`
+        );
 
-        const fullText = await fetchEuropeFullText(article);
+        if (article.title) {
+          lines.push(
+            `Title: ${article.title}`
+          );
+        }
 
-        return {
-          ...article,
-          openAccessFullTextFound: Boolean(fullText.fullTextSnippet),
-          fullTextSnippet: fullText.fullTextSnippet,
-          fullTextUrl: fullText.fullTextUrl
-        };
-      })
+        if (article.pmid) {
+          lines.push(
+            `PMID: ${article.pmid}`
+          );
+        }
+
+        if (article.pmcid) {
+          lines.push(
+            `PMCID: ${article.pmcid}`
+          );
+        }
+
+        if (article.doi) {
+          lines.push(
+            `DOI: ${article.doi}`
+          );
+        }
+
+        if (
+          article.journal ||
+          article.year
+        ) {
+          lines.push(
+            "Journal/year: " +
+            [
+              article.journal,
+              article.year
+            ]
+              .filter(Boolean)
+              .join(" / ")
+          );
+        }
+
+        if (
+          article.abstract
+        ) {
+          lines.push(
+            `Abstract: ${article.abstract}`
+          );
+        }
+
+        if (
+          article.fullTextSnippet
+        ) {
+          lines.push(
+            "Legal open-access full-text snippet: " +
+            article.fullTextSnippet
+          );
+        } else {
+          lines.push(
+            "Full text: Not retrieved through a legal open-access endpoint. Do not claim to have read paywalled full text."
+          );
+        }
+
+        return lines.join(
+          "\n"
+        );
+      }
     );
 
-    res.json({
-      articles: articles.map((article) => ({
-        sourceLabel: article.sourceLabel,
-        pmid: article.pmid,
-        pmcid: article.pmcid,
-        doi: article.doi,
-        title: article.title,
-        journal: article.journal,
-        year: article.year,
-        abstract: article.abstract,
-        url: article.url,
-        relevanceScore: article.relevanceScore,
-        openAccessFullTextFound: article.openAccessFullTextFound,
-        fullTextPreview: cleanText(article.fullTextSnippet, 1800)
-      })),
-      context: buildLiteratureContext(articles)
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: {
-        message: `Could not retrieve PubMed/open-access literature: ${error.message}`
+  return (
+    "## LITERATURE SEARCH\n" +
+    blocks.join("\n\n")
+  );
+}
+
+
+// Related literature API
+
+app.post(
+  "/api/literature",
+  async (req, res) => {
+    try {
+      const {
+        nctId = "",
+        briefTitle = "",
+        officialTitle = ""
+      } =
+        req.body || {};
+
+      const trial = {
+        nctId:
+          cleanText(
+            nctId,
+            30
+          ),
+
+        briefTitle:
+          cleanText(
+            briefTitle,
+            700
+          ),
+
+        officialTitle:
+          cleanText(
+            officialTitle,
+            1000
+          )
+      };
+
+      if (
+        !trial.nctId &&
+        !trial.briefTitle &&
+        !trial.officialTitle
+      ) {
+        return res
+          .status(400)
+          .json({
+            error: {
+              message:
+                "Missing nctId, briefTitle, or officialTitle."
+            }
+          });
       }
-    });
+
+      const pubMedQuery =
+        buildPubMedQuery(
+          trial
+        );
+
+      const europeQuery =
+        buildEuropeQuery(
+          trial
+        );
+
+      const [
+        pubmedSearchResult,
+        europeSearchResult
+      ] =
+        await Promise.allSettled([
+          searchPubMed(
+            pubMedQuery
+          ),
+
+          searchEuropePMC(
+            europeQuery
+          )
+        ]);
+
+      let pubmedIds = [];
+
+      if (
+        pubmedSearchResult.status ===
+        "fulfilled"
+      ) {
+        pubmedIds =
+          pubmedSearchResult.value;
+      }
+
+      let europeArticles = [];
+
+      if (
+        europeSearchResult.status ===
+        "fulfilled"
+      ) {
+        europeArticles =
+          europeSearchResult.value;
+      }
+
+      let pubmedArticles = [];
+
+      if (
+        pubmedIds.length
+      ) {
+        try {
+          pubmedArticles =
+            await fetchPubMedArticles(
+              pubmedIds
+            );
+        } catch (error) {
+          pubmedArticles = [];
+        }
+      }
+
+      let articles =
+        mergeArticles(
+          pubmedArticles,
+          europeArticles
+        );
+
+      articles =
+        articles.map(
+          (article) => {
+            return {
+              ...article,
+
+              relevanceScore:
+                scoreArticle(
+                  article,
+                  trial
+                )
+            };
+          }
+        );
+
+      articles.sort(
+        (a, b) =>
+          b.relevanceScore -
+          a.relevanceScore
+      );
+
+      articles =
+        articles.slice(0, 8);
+
+      articles =
+        await Promise.all(
+          articles.map(
+            async (article) => {
+              const shouldTryFullText =
+                Boolean(
+                  article.pmcid ||
+                  article.isOpenAccess ||
+                  article.hasFullText ||
+                  article.source ===
+                    "PMC"
+                );
+
+              if (
+                !shouldTryFullText
+              ) {
+                return article;
+              }
+
+              const fullText =
+                await fetchEuropeFullText(
+                  article
+                );
+
+              return {
+                ...article,
+
+                openAccessFullTextFound:
+                  Boolean(
+                    fullText
+                      .fullTextSnippet
+                  ),
+
+                fullTextSnippet:
+                  fullText
+                    .fullTextSnippet,
+
+                fullTextUrl:
+                  fullText
+                    .fullTextUrl
+              };
+            }
+          )
+        );
+
+      const articlesForFrontend =
+        articles.map(
+          (article) => {
+            return {
+              sourceLabel:
+                article.sourceLabel,
+
+              pmid:
+                article.pmid,
+
+              pmcid:
+                article.pmcid,
+
+              doi:
+                article.doi,
+
+              title:
+                article.title,
+
+              journal:
+                article.journal,
+
+              year:
+                article.year,
+
+              abstract:
+                article.abstract,
+
+              url:
+                article.url,
+
+              relevanceScore:
+                article.relevanceScore,
+
+              openAccessFullTextFound:
+                article
+                  .openAccessFullTextFound,
+
+              fullTextPreview:
+                cleanText(
+                  article
+                    .fullTextSnippet,
+                  1800
+                )
+            };
+          }
+        );
+
+      res.json({
+        articles:
+          articlesForFrontend,
+
+        context:
+          buildLiteratureContext(
+            articles
+          )
+      });
+    } catch (error) {
+      res
+        .status(500)
+        .json({
+          error: {
+            message:
+              "Could not retrieve PubMed/open-access literature: " +
+              error.message
+          }
+        });
+    }
   }
-});
+);
 
 
-/* -------------------------------------------------------------------------- */
+// Zotero login
 
-
-/* -------------------------------------------------------------------------- */
-/* Zotero OAuth                                                               */
-/* -------------------------------------------------------------------------- */
-
-function cookieOptions(maxAge) {
+function cookieOptions(
+  maxAge
+) {
   return {
     httpOnly: true,
     secure: IS_PRODUCTION,
     sameSite: "lax",
     path: "/",
-    maxAge
+    maxAge: maxAge
   };
 }
 
-function readCookie(req, name) {
-  const raw = req.headers.cookie || "";
-  for (const part of raw.split(";")) {
-    const [key, ...rest] = part.trim().split("=");
-    if (key === name) return decodeURIComponent(rest.join("="));
+
+function readCookie(
+  req,
+  name
+) {
+  const raw =
+    req.headers.cookie || "";
+
+  const cookies =
+    raw.split(";");
+
+  for (
+    const part of cookies
+  ) {
+    const pieces =
+      part
+        .trim()
+        .split("=");
+
+    const key =
+      pieces.shift();
+
+    const value =
+      pieces.join("=");
+
+    if (key === name) {
+      return decodeURIComponent(
+        value
+      );
+    }
   }
+
   return "";
 }
 
+
 function encryptionKey() {
   if (!SESSION_SECRET) {
-    throw new Error("Missing SESSION_SECRET.");
+    throw new Error(
+      "Missing SESSION_SECRET."
+    );
   }
-  return crypto.createHash("sha256").update(SESSION_SECRET).digest();
+
+  return crypto
+    .createHash("sha256")
+    .update(
+      SESSION_SECRET
+    )
+    .digest();
 }
+
 
 function seal(value) {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv);
-  const encrypted = Buffer.concat([
-    cipher.update(JSON.stringify(value), "utf8"),
-    cipher.final()
-  ]);
-  const tag = cipher.getAuthTag();
-  return [iv, tag, encrypted].map((part) => part.toString("base64url")).join(".");
-}
+  const iv =
+    crypto.randomBytes(12);
 
-function unseal(token) {
-  if (!token) return null;
-  try {
-    const [ivText, tagText, dataText] = token.split(".");
-    if (!ivText || !tagText || !dataText) return null;
-
-    const decipher = crypto.createDecipheriv(
+  const cipher =
+    crypto.createCipheriv(
       "aes-256-gcm",
       encryptionKey(),
-      Buffer.from(ivText, "base64url")
+      iv
     );
-    decipher.setAuthTag(Buffer.from(tagText, "base64url"));
 
-    const decrypted = Buffer.concat([
-      decipher.update(Buffer.from(dataText, "base64url")),
-      decipher.final()
-    ]).toString("utf8");
+  const encrypted =
+    Buffer.concat([
+      cipher.update(
+        JSON.stringify(value),
+        "utf8"
+      ),
 
-    return JSON.parse(decrypted);
-  } catch (_) {
+      cipher.final()
+    ]);
+
+  const tag =
+    cipher.getAuthTag();
+
+  return [
+    iv,
+    tag,
+    encrypted
+  ]
+    .map(
+      (part) =>
+        part.toString(
+          "base64url"
+        )
+    )
+    .join(".");
+}
+
+
+function unseal(token) {
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const parts =
+      token.split(".");
+
+    const ivText =
+      parts[0];
+
+    const tagText =
+      parts[1];
+
+    const dataText =
+      parts[2];
+
+    if (
+      !ivText ||
+      !tagText ||
+      !dataText
+    ) {
+      return null;
+    }
+
+    const decipher =
+      crypto.createDecipheriv(
+        "aes-256-gcm",
+        encryptionKey(),
+        Buffer.from(
+          ivText,
+          "base64url"
+        )
+      );
+
+    decipher.setAuthTag(
+      Buffer.from(
+        tagText,
+        "base64url"
+      )
+    );
+
+    const decrypted =
+      Buffer.concat([
+        decipher.update(
+          Buffer.from(
+            dataText,
+            "base64url"
+          )
+        ),
+
+        decipher.final()
+      ]).toString("utf8");
+
+    return JSON.parse(
+      decrypted
+    );
+  } catch (error) {
     return null;
   }
 }
+
 
 function getZoteroAuth(req) {
-  const auth = unseal(readCookie(req, ZOTERO_AUTH_COOKIE));
-  if (!auth?.userId || !auth?.apiKey) return null;
-  return auth;
-}
+  const cookie =
+    readCookie(
+      req,
+      ZOTERO_AUTH_COOKIE
+    );
 
-function requireZoteroAuth(req, res) {
-  const auth = getZoteroAuth(req);
-  if (!auth) {
-    res.status(401).json({
-      error: { message: "Connect your Zotero account first." }
-    });
+  const auth =
+    unseal(cookie);
+
+  if (
+    !auth?.userId ||
+    !auth?.apiKey
+  ) {
     return null;
   }
+
   return auth;
 }
 
+
+function requireZoteroAuth(
+  req,
+  res
+) {
+  const auth =
+    getZoteroAuth(req);
+
+  if (!auth) {
+    res
+      .status(401)
+      .json({
+        error: {
+          message:
+            "Connect your Zotero account first."
+        }
+      });
+
+    return null;
+  }
+
+  return auth;
+}
+
+
 function oauthClient() {
-  if (!ZOTERO_CLIENT_KEY || !ZOTERO_CLIENT_SECRET) {
-    throw new Error("Missing ZOTERO_CLIENT_KEY or ZOTERO_CLIENT_SECRET.");
+  if (
+    !ZOTERO_CLIENT_KEY ||
+    !ZOTERO_CLIENT_SECRET
+  ) {
+    throw new Error(
+      "Missing ZOTERO_CLIENT_KEY or ZOTERO_CLIENT_SECRET."
+    );
   }
 
   return OAuth({
     consumer: {
-      key: ZOTERO_CLIENT_KEY,
-      secret: ZOTERO_CLIENT_SECRET
+      key:
+        ZOTERO_CLIENT_KEY,
+
+      secret:
+        ZOTERO_CLIENT_SECRET
     },
-    signature_method: "HMAC-SHA1",
-    hash_function(baseString, key) {
-      return crypto.createHmac("sha1", key).update(baseString).digest("base64");
+
+    signature_method:
+      "HMAC-SHA1",
+
+    hash_function(
+      baseString,
+      key
+    ) {
+      return crypto
+        .createHmac(
+          "sha1",
+          key
+        )
+        .update(baseString)
+        .digest("base64");
     }
   });
 }
 
-async function oauthPost(url, data = {}, token = undefined) {
-  const oauth = oauthClient();
+
+async function oauthPost(
+  url,
+  data = {},
+  token = undefined
+) {
+  const oauth =
+    oauthClient();
+
   const requestData = {
-    url,
+    url: url,
     method: "POST",
-    data
+    data: data
   };
 
-  const authorization = oauth.toHeader(oauth.authorize(requestData, token));
-  const response = await fetch(url, {
-    method: "POST",
-    headers: authorization
-  });
+  const authorization =
+    oauth.toHeader(
+      oauth.authorize(
+        requestData,
+        token
+      )
+    );
 
-  const text = await response.text();
+  const response =
+    await fetch(
+      url,
+      {
+        method: "POST",
+        headers:
+          authorization
+      }
+    );
+
+  const text =
+    await response.text();
+
   if (!response.ok) {
-    throw new Error(`Zotero OAuth request failed (${response.status}): ${text.slice(0, 300)}`);
+    throw new Error(
+      `Zotero OAuth request failed (${response.status}): ${text.slice(0, 300)}`
+    );
   }
 
-  return Object.fromEntries(new URLSearchParams(text));
+  return Object.fromEntries(
+    new URLSearchParams(
+      text
+    )
+  );
 }
+
 
 function oauthCallbackUrl() {
-  return `${APP_BASE_URL}/api/zotero/callback`;
+  return (
+    APP_BASE_URL +
+    "/api/zotero/callback"
+  );
 }
 
-app.get("/api/zotero/connect", async (_req, res) => {
-  try {
-    if (!SESSION_SECRET) {
-      throw new Error("Missing SESSION_SECRET.");
+
+app.get(
+  "/api/zotero/connect",
+  async (req, res) => {
+    try {
+      if (
+        !SESSION_SECRET
+      ) {
+        throw new Error(
+          "Missing SESSION_SECRET."
+        );
+      }
+
+      const requestToken =
+        await oauthPost(
+          ZOTERO_REQUEST_URL,
+          {
+            oauth_callback:
+              oauthCallbackUrl()
+          }
+        );
+
+      if (
+        !requestToken
+          .oauth_token ||
+        !requestToken
+          .oauth_token_secret
+      ) {
+        throw new Error(
+          "Zotero did not return a temporary OAuth token."
+        );
+      }
+
+      const temporaryLogin = {
+        token:
+          requestToken
+            .oauth_token,
+
+        secret:
+          requestToken
+            .oauth_token_secret,
+
+        createdAt:
+          Date.now()
+      };
+
+      res.cookie(
+        ZOTERO_OAUTH_COOKIE,
+        seal(
+          temporaryLogin
+        ),
+        cookieOptions(
+          10 * 60 * 1000
+        )
+      );
+
+      const params =
+        new URLSearchParams({
+          oauth_token:
+            requestToken
+              .oauth_token,
+
+          name:
+            "Clinical Trial Evidence Assistant",
+
+          library_access:
+            "1",
+
+          notes_access:
+            "1",
+
+          write_access:
+            "0",
+
+          all_groups:
+            "none"
+        });
+
+      res.redirect(
+        ZOTERO_AUTHORIZE_URL +
+        "?" +
+        params.toString()
+      );
+    } catch (error) {
+      res
+        .status(500)
+        .send(
+          "Could not start Zotero login: " +
+          error.message
+        );
     }
-
-    const requestToken = await oauthPost(ZOTERO_REQUEST_URL, {
-      oauth_callback: oauthCallbackUrl()
-    });
-
-    if (!requestToken.oauth_token || !requestToken.oauth_token_secret) {
-      throw new Error("Zotero did not return a temporary OAuth token.");
-    }
-
-    res.cookie(
-      ZOTERO_OAUTH_COOKIE,
-      seal({
-        token: requestToken.oauth_token,
-        secret: requestToken.oauth_token_secret,
-        createdAt: Date.now()
-      }),
-      cookieOptions(10 * 60 * 1000)
-    );
-
-    const params = new URLSearchParams({
-      oauth_token: requestToken.oauth_token,
-      name: "Clinical Trial Evidence Assistant",
-      library_access: "1",
-      notes_access: "1",
-      write_access: "0",
-      all_groups: "none"
-    });
-
-    res.redirect(`${ZOTERO_AUTHORIZE_URL}?${params.toString()}`);
-  } catch (error) {
-    res.status(500).send(`Could not start Zotero login: ${error.message}`);
   }
-});
+);
 
-app.get("/api/zotero/callback", async (req, res) => {
-  try {
-    const oauthToken = String(req.query.oauth_token || "");
-    const verifier = String(req.query.oauth_verifier || "");
-    const pending = unseal(readCookie(req, ZOTERO_OAUTH_COOKIE));
 
-    if (!oauthToken || !verifier || !pending?.token || !pending?.secret) {
-      throw new Error("The Zotero login could not be verified. Please try connecting again.");
-    }
+app.get(
+  "/api/zotero/callback",
+  async (req, res) => {
+    try {
+      const oauthToken =
+        String(
+          req.query
+            .oauth_token ||
+          ""
+        );
 
-    if (oauthToken !== pending.token) {
-      throw new Error("The returned Zotero token did not match the login request.");
-    }
+      const verifier =
+        String(
+          req.query
+            .oauth_verifier ||
+          ""
+        );
 
-    if (Date.now() - Number(pending.createdAt || 0) > 10 * 60 * 1000) {
-      throw new Error("The Zotero login request expired. Please try again.");
-    }
+      const savedCookie =
+        readCookie(
+          req,
+          ZOTERO_OAUTH_COOKIE
+        );
 
-    const access = await oauthPost(
-      ZOTERO_ACCESS_URL,
-      { oauth_verifier: verifier },
-      { key: pending.token, secret: pending.secret }
-    );
+      const pending =
+        unseal(
+          savedCookie
+        );
 
-    const userId = access.userID || access.userId || "";
-    const apiKey = access.oauth_token_secret || access.oauth_token || "";
+      if (
+        !oauthToken ||
+        !verifier ||
+        !pending?.token ||
+        !pending?.secret
+      ) {
+        throw new Error(
+          "The Zotero login could not be verified. Please try connecting again."
+        );
+      }
 
-    if (!userId || !apiKey) {
-      throw new Error("Zotero did not return the user ID and API key.");
-    }
+      if (
+        oauthToken !==
+        pending.token
+      ) {
+        throw new Error(
+          "The returned Zotero token did not match the login request."
+        );
+      }
 
-    res.cookie(
-      ZOTERO_AUTH_COOKIE,
-      seal({ userId: String(userId), apiKey: String(apiKey) }),
-      cookieOptions(30 * 24 * 60 * 60 * 1000)
-    );
-    res.clearCookie(ZOTERO_OAUTH_COOKIE, cookieOptions(0));
+      const tenMinutes =
+        10 * 60 * 1000;
 
-    res.type("html").send(`<!doctype html>
-<html><head><meta charset="utf-8"><title>Zotero connected</title></head>
-<body style="font-family:system-ui;padding:32px;text-align:center">
+      const loginAge =
+        Date.now() -
+        Number(
+          pending.createdAt ||
+          0
+        );
+
+      if (
+        loginAge >
+        tenMinutes
+      ) {
+        throw new Error(
+          "The Zotero login request expired. Please try again."
+        );
+      }
+
+      const access =
+        await oauthPost(
+          ZOTERO_ACCESS_URL,
+          {
+            oauth_verifier:
+              verifier
+          },
+          {
+            key:
+              pending.token,
+
+            secret:
+              pending.secret
+          }
+        );
+
+      const userId =
+        access.userID ||
+        access.userId ||
+        "";
+
+      const apiKey =
+        access
+          .oauth_token_secret ||
+        access
+          .oauth_token ||
+        "";
+
+      if (
+        !userId ||
+        !apiKey
+      ) {
+        throw new Error(
+          "Zotero did not return the user ID and API key."
+        );
+      }
+
+      const loggedInUser = {
+        userId:
+          String(userId),
+
+        apiKey:
+          String(apiKey)
+      };
+
+      res.cookie(
+        ZOTERO_AUTH_COOKIE,
+        seal(
+          loggedInUser
+        ),
+        cookieOptions(
+          30 *
+          24 *
+          60 *
+          60 *
+          1000
+        )
+      );
+
+      res.clearCookie(
+        ZOTERO_OAUTH_COOKIE,
+        cookieOptions(0)
+      );
+
+      res
+        .type("html")
+        .send(`
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Zotero connected</title>
+</head>
+
+<body style="
+  font-family:system-ui;
+  padding:32px;
+  text-align:center;
+">
+
   <h2>Zotero connected</h2>
-  <p>You can return to the Clinical Trial Evidence Assistant.</p>
+
+  <p>
+    You can return to the
+    Clinical Trial Evidence Assistant.
+  </p>
+
   <script>
     if (window.opener) {
-      window.opener.postMessage({ type: "zotero-connected" }, window.location.origin);
+      window.opener.postMessage(
+        {
+          type: "zotero-connected"
+        },
+        window.location.origin
+      );
+
       window.close();
     }
   </script>
-</body></html>`);
-  } catch (error) {
-    res.clearCookie(ZOTERO_OAUTH_COOKIE, cookieOptions(0));
-    res.status(400).type("html").send(`<!doctype html>
-<html><head><meta charset="utf-8"><title>Zotero connection failed</title></head>
-<body style="font-family:system-ui;padding:32px;text-align:center">
-  <h2>Zotero connection failed</h2>
-  <p>${String(error.message || error).replace(/[<>&"]/g, "")}</p>
-</body></html>`);
+
+</body>
+</html>
+`);
+    } catch (error) {
+      res.clearCookie(
+        ZOTERO_OAUTH_COOKIE,
+        cookieOptions(0)
+      );
+
+      const message =
+        String(
+          error.message ||
+          error
+        ).replace(
+          /[<>&"]/g,
+          ""
+        );
+
+      res
+        .status(400)
+        .type("html")
+        .send(`
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>
+    Zotero connection failed
+  </title>
+</head>
+
+<body style="
+  font-family:system-ui;
+  padding:32px;
+  text-align:center;
+">
+
+  <h2>
+    Zotero connection failed
+  </h2>
+
+  <p>${message}</p>
+
+</body>
+</html>
+`);
+    }
   }
-});
-
-app.get("/api/zotero/status", (req, res) => {
-  const auth = getZoteroAuth(req);
-  res.json({
-    connected: Boolean(auth),
-    userId: auth?.userId || null
-  });
-});
-
-app.post("/api/zotero/logout", (req, res) => {
-  res.clearCookie(ZOTERO_AUTH_COOKIE, cookieOptions(0));
-  res.clearCookie(ZOTERO_OAUTH_COOKIE, cookieOptions(0));
-  res.json({ ok: true });
-});
+);
 
 
-/* -------------------------------------------------------------------------- */
-/* PDF text extraction                                                        */
-/* -------------------------------------------------------------------------- */
+app.get(
+  "/api/zotero/status",
+  (req, res) => {
+    const auth =
+      getZoteroAuth(req);
 
-async function extractPdfText(pdfBuffer, maxChars = 45000) {
-  if (!pdfBuffer || !pdfBuffer.length) return { text: "", pages: 0 };
+    res.json({
+      connected:
+        Boolean(auth),
 
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      userId:
+        auth?.userId ||
+        null
+    });
+  }
+);
 
-  const loadingTask = pdfjs.getDocument({
-    data: new Uint8Array(pdfBuffer),
-    disableWorker: true,
-    useSystemFonts: true
-  });
 
-  const pdf = await loadingTask.promise;
+app.post(
+  "/api/zotero/logout",
+  (req, res) => {
+    res.clearCookie(
+      ZOTERO_AUTH_COOKIE,
+      cookieOptions(0)
+    );
+
+    res.clearCookie(
+      ZOTERO_OAUTH_COOKIE,
+      cookieOptions(0)
+    );
+
+    res.json({
+      ok: true
+    });
+  }
+);
+
+
+// PDF reading
+
+async function extractPdfText(
+  pdfBuffer,
+  maxChars = 45000
+) {
+  if (
+    !pdfBuffer ||
+    !pdfBuffer.length
+  ) {
+    return {
+      text: "",
+      pages: 0
+    };
+  }
+
+  const pdfjs =
+    await import(
+      "pdfjs-dist/legacy/build/pdf.mjs"
+    );
+
+  const loadingTask =
+    pdfjs.getDocument({
+      data:
+        new Uint8Array(
+          pdfBuffer
+        ),
+
+      disableWorker: true,
+      useSystemFonts: true
+    });
+
+  const pdf =
+    await loadingTask.promise;
+
   const pageBlocks = [];
+
   let totalChars = 0;
 
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const content = await page.getTextContent();
+  for (
+    let pageNumber = 1;
+    pageNumber <=
+      pdf.numPages;
+    pageNumber += 1
+  ) {
+    const page =
+      await pdf.getPage(
+        pageNumber
+      );
 
-    const parts = (content.items || [])
-      .filter((item) => item && typeof item.str === "string")
-      .map((item) => item.str.trim())
-      .filter(Boolean);
+    const content =
+      await page
+        .getTextContent();
 
-    const pageText = parts.join(" ").replace(/\s+/g, " ").trim();
+    const parts =
+      (content.items || [])
+        .filter(
+          (item) =>
+            item &&
+            typeof item.str ===
+              "string"
+        )
+        .map(
+          (item) =>
+            item.str.trim()
+        )
+        .filter(Boolean);
+
+    const pageText =
+      parts
+        .join(" ")
+        .replace(
+          /\s+/g,
+          " "
+        )
+        .trim();
 
     if (pageText) {
-      const block = `--- PDF PAGE ${pageNumber} ---\n${pageText}`;
-      pageBlocks.push(block);
-      totalChars += block.length;
+      const block =
+        `--- PDF PAGE ${pageNumber} ---\n` +
+        pageText;
+
+      pageBlocks.push(
+        block
+      );
+
+      totalChars +=
+        block.length;
     }
 
-    if (totalChars >= maxChars) break;
+    if (
+      totalChars >=
+      maxChars
+    ) {
+      break;
+    }
   }
 
   return {
-    text: cleanText(pageBlocks.join("\n\n"), maxChars),
-    pages: pdf.numPages
+    text:
+      cleanText(
+        pageBlocks.join(
+          "\n\n"
+        ),
+        maxChars
+      ),
+
+    pages:
+      pdf.numPages
   };
 }
 
-async function downloadZoteroAttachmentFile(userId, attachmentKey, apiKey) {
-  const url =
-    `${ZOTERO_API_BASE}/users/${encodeURIComponent(userId)}` +
-    `/items/${encodeURIComponent(attachmentKey)}/file`;
 
-  const response = await fetch(url, {
-    headers: {
-      "Zotero-API-Version": "3",
-      "Zotero-API-Key": apiKey,
-      accept: "application/pdf,application/octet-stream,*/*"
-    },
-    redirect: "follow"
-  });
+async function downloadZoteroAttachmentFile(
+  userId,
+  attachmentKey,
+  apiKey
+) {
+  const url =
+    ZOTERO_API_BASE +
+    "/users/" +
+    encodeURIComponent(
+      userId
+    ) +
+    "/items/" +
+    encodeURIComponent(
+      attachmentKey
+    ) +
+    "/file";
+
+  const response =
+    await fetch(
+      url,
+      {
+        headers: {
+          "Zotero-API-Version":
+            "3",
+
+          "Zotero-API-Key":
+            apiKey,
+
+          accept:
+            "application/pdf,application/octet-stream,*/*"
+        },
+
+        redirect:
+          "follow"
+      }
+    );
 
   if (!response.ok) {
-    const body = await response.text().catch(() => "");
+    const body =
+      await response
+        .text()
+        .catch(
+          () => ""
+        );
+
+    let message =
+      `Zotero PDF download failed (${response.status})`;
+
+    if (body) {
+      message +=
+        ": " +
+        body.slice(
+          0,
+          250
+        );
+    }
+
     throw new Error(
-      `Zotero PDF download failed (${response.status})` +
-      (body ? `: ${body.slice(0, 250)}` : "")
+      message
     );
   }
 
-  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
+  const contentType =
+    String(
+      response.headers.get(
+        "content-type"
+      ) || ""
+    ).toLowerCase();
+
+  const arrayBuffer =
+    await response
+      .arrayBuffer();
+
+  const buffer =
+    Buffer.from(
+      arrayBuffer
+    );
+
+  const startsWithPdf =
+    buffer
+      .subarray(0, 5)
+      .toString(
+        "ascii"
+      ) === "%PDF-";
 
   const looksLikePdf =
-    contentType.includes("pdf") ||
-    buffer.subarray(0, 5).toString("ascii") === "%PDF-";
+    contentType.includes(
+      "pdf"
+    ) ||
+    startsWithPdf;
 
   if (!looksLikePdf) {
-    throw new Error("The Zotero attachment downloaded, but it was not a PDF.");
+    throw new Error(
+      "The Zotero attachment downloaded, but it was not a PDF."
+    );
   }
 
   return buffer;
 }
 
-async function retrieveZoteroPdfText({ userId, apiKey, attachment }) {
-  if (!attachment?.key) {
+
+async function retrieveZoteroPdfText({
+  userId,
+  apiKey,
+  attachment
+}) {
+  if (
+    !attachment?.key
+  ) {
     return {
       text: "",
       source: "none",
       pages: 0,
       indexedPages: null,
       totalPages: null,
-      reason: "No PDF attachment was found for this Zotero item."
+      reason:
+        "No PDF attachment was found for this Zotero item."
     };
   }
 
-  // 1) Fastest path: Zotero's already-indexed full text.
+  // First try text Zotero already indexed.
+
   try {
-    const fullTextMeta = await zoteroFetchJson(
-      `/users/${encodeURIComponent(userId)}/items/${encodeURIComponent(attachment.key)}/fulltext`,
-      apiKey
-    );
+    const fullTextMeta =
+      await zoteroFetchJson(
+        "/users/" +
+        encodeURIComponent(
+          userId
+        ) +
+        "/items/" +
+        encodeURIComponent(
+          attachment.key
+        ) +
+        "/fulltext",
 
-    const indexedText = cleanText(fullTextMeta?.content || "", 45000);
+        apiKey
+      );
 
-    if (indexedText.length >= 300) {
+    const indexedText =
+      cleanText(
+        fullTextMeta
+          ?.content ||
+        "",
+        45000
+      );
+
+    if (
+      indexedText.length >=
+      300
+    ) {
       return {
-        text: indexedText,
-        source: "zotero-indexed",
-        pages: Number(fullTextMeta?.totalPages || fullTextMeta?.indexedPages || 0),
-        indexedPages: fullTextMeta?.indexedPages || null,
-        totalPages: fullTextMeta?.totalPages || null,
+        text:
+          indexedText,
+
+        source:
+          "zotero-indexed",
+
+        pages:
+          Number(
+            fullTextMeta
+              ?.totalPages ||
+            fullTextMeta
+              ?.indexedPages ||
+            0
+          ),
+
+        indexedPages:
+          fullTextMeta
+            ?.indexedPages ||
+          null,
+
+        totalPages:
+          fullTextMeta
+            ?.totalPages ||
+          null,
+
         reason: ""
       };
     }
-  } catch (_) {
-    // 404 is normal when Zotero hasn't generated indexed text.
+  } catch (error) {
+    // Zotero may not have indexed it.
   }
 
-  // 2) Fallback: download the ACTUAL PDF attached to the citation.
+  // If indexed text is unavailable,
+  // download the PDF and read it.
+
   try {
-    const pdfBuffer = await downloadZoteroAttachmentFile(
-      userId,
-      attachment.key,
-      apiKey
-    );
+    const pdfBuffer =
+      await downloadZoteroAttachmentFile(
+        userId,
+        attachment.key,
+        apiKey
+      );
 
-    const parsed = await extractPdfText(pdfBuffer, 45000);
+    const parsed =
+      await extractPdfText(
+        pdfBuffer,
+        45000
+      );
 
-    if (parsed.text.length >= 300) {
+    if (
+      parsed.text.length >=
+      300
+    ) {
       return {
-        text: parsed.text,
-        source: "zotero-pdf",
-        pages: parsed.pages,
-        indexedPages: null,
-        totalPages: parsed.pages,
+        text:
+          parsed.text,
+
+        source:
+          "zotero-pdf",
+
+        pages:
+          parsed.pages,
+
+        indexedPages:
+          null,
+
+        totalPages:
+          parsed.pages,
+
         reason: ""
       };
     }
 
     return {
       text: "",
-      source: "zotero-pdf-no-text",
-      pages: parsed.pages,
-      indexedPages: null,
-      totalPages: parsed.pages,
+
+      source:
+        "zotero-pdf-no-text",
+
+      pages:
+        parsed.pages,
+
+      indexedPages:
+        null,
+
+      totalPages:
+        parsed.pages,
+
       reason:
         "The attached PDF was downloaded, but little or no selectable text could be extracted. It may be scanned/image-based."
     };
   } catch (error) {
     return {
       text: "",
-      source: "download-failed",
+
+      source:
+        "download-failed",
+
       pages: 0,
-      indexedPages: null,
-      totalPages: null,
-      reason: String(error.message || error)
+
+      indexedPages:
+        null,
+
+      totalPages:
+        null,
+
+      reason:
+        String(
+          error.message ||
+          error
+        )
     };
   }
 }
 
 
-/* Zotero Web API                                                             */
-/* -------------------------------------------------------------------------- */
+// Zotero API
 
-function zoteroHeaders(apiKey) {
+function zoteroHeaders(
+  apiKey
+) {
   return {
-    accept: "application/json",
-    "Zotero-API-Version": "3",
-    "Zotero-API-Key": apiKey
+    accept:
+      "application/json",
+
+    "Zotero-API-Version":
+      "3",
+
+    "Zotero-API-Key":
+      apiKey
   };
 }
 
-async function zoteroFetchJson(pathname, apiKey) {
-  const response = await fetch(`${ZOTERO_API_BASE}${pathname}`, {
-    headers: zoteroHeaders(apiKey)
-  });
 
-  const text = await response.text();
+async function zoteroFetchJson(
+  pathname,
+  apiKey
+) {
+  const response =
+    await fetch(
+      ZOTERO_API_BASE +
+      pathname,
+      {
+        headers:
+          zoteroHeaders(
+            apiKey
+          )
+      }
+    );
+
+  const text =
+    await response.text();
 
   if (!response.ok) {
-    throw new Error(`Zotero request failed (${response.status}): ${text.slice(0, 300)}`);
+    throw new Error(
+      `Zotero request failed (${response.status}): ${text.slice(0, 300)}`
+    );
   }
 
-  return text ? JSON.parse(text) : null;
+  if (!text) {
+    return null;
+  }
+
+  return JSON.parse(text);
 }
 
-function zoteroCreators(creators = []) {
+
+function zoteroCreators(
+  creators = []
+) {
   return arr(creators)
     .map((creator) => {
-      if (!creator) return "";
-      if (creator.name) return cleanText(creator.name, 200);
+      if (!creator) {
+        return "";
+      }
+
+      if (creator.name) {
+        return cleanText(
+          creator.name,
+          200
+        );
+      }
+
+      const fullName =
+        [
+          creator.firstName,
+          creator.lastName
+        ]
+          .filter(Boolean)
+          .join(" ");
+
       return cleanText(
-        [creator.firstName, creator.lastName].filter(Boolean).join(" "),
+        fullName,
         200
       );
     })
@@ -993,98 +2399,302 @@ function zoteroCreators(creators = []) {
     .join(", ");
 }
 
-function stripSimpleHtml(value = "") {
+
+function stripSimpleHtml(
+  value = ""
+) {
   return cleanText(
     String(value || "")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n")
-      .replace(/<[^>]+>/g, " "),
+      .replace(
+        /<br\s*\/?>/gi,
+        "\n"
+      )
+      .replace(
+        /<\/p>/gi,
+        "\n"
+      )
+      .replace(
+        /<[^>]+>/g,
+        " "
+      ),
     12000
   );
 }
 
-function normalizeZoteroItem(item) {
-  const data = item?.data || {};
+
+function normalizeZoteroItem(
+  item
+) {
+  const data =
+    item?.data || {};
 
   return {
-    key: item?.key || data.key || "",
-    version: item?.version || data.version || 0,
-    itemType: data.itemType || "",
-    title: cleanText(data.title || "(Untitled)", 1200),
-    creators: zoteroCreators(data.creators || []),
-    date: cleanText(data.date || "", 100),
-    publicationTitle: cleanText(
-      data.publicationTitle || data.bookTitle || data.proceedingsTitle || "",
-      500
-    ),
-    volume: cleanText(data.volume || "", 50),
-    issue: cleanText(data.issue || "", 50),
-    pages: cleanText(data.pages || "", 100),
-    DOI: cleanText(data.DOI || "", 300),
-    url: cleanText(data.url || "", 1200),
-    abstractNote: stripSimpleHtml(data.abstractNote || ""),
-    tags: arr(data.tags)
-      .map((tag) => cleanText(tag?.tag || tag, 150))
-      .filter(Boolean)
-      .slice(0, 30),
-    dateModified: data.dateModified || "",
-    parentItem: data.parentItem || ""
+    key:
+      item?.key ||
+      data.key ||
+      "",
+
+    version:
+      item?.version ||
+      data.version ||
+      0,
+
+    itemType:
+      data.itemType ||
+      "",
+
+    title:
+      cleanText(
+        data.title ||
+        "(Untitled)",
+        1200
+      ),
+
+    creators:
+      zoteroCreators(
+        data.creators ||
+        []
+      ),
+
+    date:
+      cleanText(
+        data.date || "",
+        100
+      ),
+
+    publicationTitle:
+      cleanText(
+        data.publicationTitle ||
+        data.bookTitle ||
+        data.proceedingsTitle ||
+        "",
+        500
+      ),
+
+    volume:
+      cleanText(
+        data.volume ||
+        "",
+        50
+      ),
+
+    issue:
+      cleanText(
+        data.issue ||
+        "",
+        50
+      ),
+
+    pages:
+      cleanText(
+        data.pages ||
+        "",
+        100
+      ),
+
+    DOI:
+      cleanText(
+        data.DOI ||
+        "",
+        300
+      ),
+
+    url:
+      cleanText(
+        data.url ||
+        "",
+        1200
+      ),
+
+    abstractNote:
+      stripSimpleHtml(
+        data.abstractNote ||
+        ""
+      ),
+
+    tags:
+      arr(data.tags)
+        .map((tag) => {
+          return cleanText(
+            tag?.tag ||
+            tag,
+            150
+          );
+        })
+        .filter(Boolean)
+        .slice(0, 30),
+
+    dateModified:
+      data.dateModified ||
+      "",
+
+    parentItem:
+      data.parentItem ||
+      ""
   };
 }
 
-function buildZoteroArticleContext({ item, notes = [], attachment = null, fullText = "", fullTextSource = "none" }) {
-  const article = normalizeZoteroItem(item);
+
+function buildZoteroArticleContext({
+  item,
+  notes = [],
+  attachment = null,
+  fullText = "",
+  fullTextSource = "none"
+}) {
+  const article =
+    normalizeZoteroItem(
+      item
+    );
+
   const lines = [
     "## USER-SELECTED ZOTERO ARTICLE",
+
     `Zotero item key: ${article.key}`,
-    `Item type: ${article.itemType || "Not reported"}`,
-    `Title: ${article.title || "Not reported"}`,
-    `Authors/creators: ${article.creators || "Not reported"}`,
-    `Date: ${article.date || "Not reported"}`,
-    `Journal/publication: ${article.publicationTitle || "Not reported"}`,
-    `DOI: ${article.DOI || "Not reported"}`,
-    `URL: ${article.url || "Not reported"}`
+
+    `Item type: ${
+      article.itemType ||
+      "Not reported"
+    }`,
+
+    `Title: ${
+      article.title ||
+      "Not reported"
+    }`,
+
+    `Authors/creators: ${
+      article.creators ||
+      "Not reported"
+    }`,
+
+    `Date: ${
+      article.date ||
+      "Not reported"
+    }`,
+
+    `Journal/publication: ${
+      article.publicationTitle ||
+      "Not reported"
+    }`,
+
+    `DOI: ${
+      article.DOI ||
+      "Not reported"
+    }`,
+
+    `URL: ${
+      article.url ||
+      "Not reported"
+    }`
   ];
 
-  if (article.abstractNote) {
-    lines.push(`Abstract: ${article.abstractNote}`);
+  if (
+    article.abstractNote
+  ) {
+    lines.push(
+      `Abstract: ${article.abstractNote}`
+    );
   } else {
-    lines.push("Abstract: Not available in the Zotero item.");
+    lines.push(
+      "Abstract: Not available in the Zotero item."
+    );
   }
 
-  if (article.tags.length) {
-    lines.push(`Tags: ${article.tags.join(", ")}`);
+  if (
+    article.tags.length
+  ) {
+    lines.push(
+      `Tags: ${article.tags.join(", ")}`
+    );
   }
 
-  const noteTexts = notes
-    .map((note, index) => {
-      const text = stripSimpleHtml(note?.data?.note || "");
-      return text ? `Note ${index + 1}: ${text}` : "";
-    })
-    .filter(Boolean);
+  const noteTexts =
+    notes
+      .map(
+        (
+          note,
+          index
+        ) => {
+          const text =
+            stripSimpleHtml(
+              note?.data?.note ||
+              ""
+            );
 
-  if (noteTexts.length) {
-    lines.push(`Zotero notes:\n${noteTexts.join("\n")}`);
+          if (!text) {
+            return "";
+          }
+
+          return (
+            `Note ${index + 1}: ` +
+            text
+          );
+        }
+      )
+      .filter(Boolean);
+
+  if (
+    noteTexts.length
+  ) {
+    lines.push(
+      "Zotero notes:\n" +
+      noteTexts.join(
+        "\n"
+      )
+    );
   }
 
   if (attachment) {
-    const attachmentData = attachment?.data || {};
+    const attachmentData =
+      attachment?.data ||
+      {};
+
+    const attachmentName =
+      attachmentData.title ||
+      attachmentData.filename ||
+      "Attached file";
+
     lines.push(
-      `Attachment: ${cleanText(attachmentData.title || attachmentData.filename || "Attached file", 500)}`
+      "Attachment: " +
+      cleanText(
+        attachmentName,
+        500
+      )
     );
   }
 
   if (fullText) {
-    const sourceLabel =
-      fullTextSource === "zotero-indexed"
-        ? "Zotero indexed full text"
-        : fullTextSource === "zotero-pdf"
-          ? "Text extracted from the actual PDF attached in Zotero"
-          : fullTextSource === "manual-upload"
-            ? "Text extracted from a manually uploaded PDF"
-            : "PDF/full-text evidence";
+    let sourceLabel =
+      "PDF/full-text evidence";
 
-    lines.push(`${sourceLabel}:\n${cleanText(fullText, 45000)}`);
+    if (
+      fullTextSource ===
+      "zotero-indexed"
+    ) {
+      sourceLabel =
+        "Zotero indexed full text";
+    } else if (
+      fullTextSource ===
+      "zotero-pdf"
+    ) {
+      sourceLabel =
+        "Text extracted from the actual PDF attached in Zotero";
+    } else if (
+      fullTextSource ===
+      "manual-upload"
+    ) {
+      sourceLabel =
+        "Text extracted from a manually uploaded PDF";
+    }
+
+    lines.push(
+      sourceLabel +
+      ":\n" +
+      cleanText(
+        fullText,
+        45000
+      )
+    );
   } else {
     lines.push(
       "Full text: Not retrieved. Answer only from the metadata, abstract, and notes above."
@@ -1094,265 +2704,648 @@ function buildZoteroArticleContext({ item, notes = [], attachment = null, fullTe
   return lines.join("\n");
 }
 
-/* ----------------------------- Zotero library ----------------------------- */
 
-app.get("/api/zotero/library", async (req, res) => {
-  try {
-    const auth = requireZoteroAuth(req, res);
-    if (!auth) return;
-    const q = cleanText(req.query.q || "", 300).toLowerCase();
+// Zotero routes
 
-    const params = new URLSearchParams({
-      limit: "100",
-      sort: "dateModified",
-      direction: "desc",
-      format: "json"
-    });
-
-    const rawItems = await zoteroFetchJson(
-      `/users/${encodeURIComponent(auth.userId)}/items/top?${params.toString()}`,
-      auth.apiKey
-    );
-
-    const excludedTypes = new Set(["attachment", "note", "annotation"]);
-
-    let items = arr(rawItems)
-      .map(normalizeZoteroItem)
-      .filter((item) => item.key && !excludedTypes.has(item.itemType));
-
-    if (q) {
-      items = items.filter((item) => {
-        const haystack = [
-          item.title,
-          item.creators,
-          item.publicationTitle,
-          item.DOI,
-          item.tags.join(" ")
-        ]
-          .join(" ")
-          .toLowerCase();
-
-        return haystack.includes(q);
-      });
-    }
-
-    res.json({
-      userId: auth.userId,
-      username: "",
-      count: items.length,
-      items
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: { message: `Could not load Zotero library: ${error.message}` }
-    });
-  }
-});
-
-app.get("/api/zotero/article/:itemKey", async (req, res) => {
-  try {
-    const auth = requireZoteroAuth(req, res);
-    if (!auth) return;
-    const itemKey = cleanText(req.params.itemKey || "", 40);
-
-    if (!/^[A-Za-z0-9]+$/.test(itemKey)) {
-      return res.status(400).json({
-        error: { message: "Invalid Zotero item key." }
-      });
-    }
-
-    const item = await zoteroFetchJson(
-      `/users/${encodeURIComponent(auth.userId)}/items/${encodeURIComponent(itemKey)}`,
-      auth.apiKey
-    );
-
-    let children = [];
-    try {
-      children = await zoteroFetchJson(
-        `/users/${encodeURIComponent(auth.userId)}/items/${encodeURIComponent(itemKey)}/children?limit=100&format=json`,
-        auth.apiKey
-      );
-    } catch (_) {
-      children = [];
-    }
-
-    const notes = arr(children).filter(
-      (child) => child?.data?.itemType === "note"
-    );
-
-    const attachments = arr(children).filter(
-      (child) => child?.data?.itemType === "attachment"
-    );
-
-    const pdfAttachment =
-      attachments.find((attachment) =>
-        /pdf/i.test(
-          `${attachment?.data?.contentType || ""} ${attachment?.data?.filename || ""} ${attachment?.data?.title || ""}`
-        )
-      ) || attachments[0] || null;
-
-    const pdfResult = await retrieveZoteroPdfText({
-      userId: auth.userId,
-      apiKey: auth.apiKey,
-      attachment: pdfAttachment
-    });
-
-    const fullText = pdfResult.text || "";
-
-    const normalized = normalizeZoteroItem(item);
-    const context = buildZoteroArticleContext({
-      item,
-      notes,
-      attachment: pdfAttachment,
-      fullText,
-      fullTextSource: pdfResult.source
-    });
-
-    res.json({
-      article: normalized,
-      attachment: pdfAttachment
-        ? {
-            key: pdfAttachment.key,
-            title: cleanText(
-              pdfAttachment?.data?.title || pdfAttachment?.data?.filename || "Attachment",
-              500
-            ),
-            filename: cleanText(pdfAttachment?.data?.filename || "", 500),
-            contentType: cleanText(pdfAttachment?.data?.contentType || "", 200)
-          }
-        : null,
-      fullTextAvailable: Boolean(fullText),
-      fullTextSource: pdfResult.source,
-      pdfStatusMessage: pdfResult.reason || "",
-      indexedPages: pdfResult.indexedPages || null,
-      totalPages: pdfResult.totalPages || pdfResult.pages || null,
-      context
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: { message: `Could not load Zotero article: ${error.message}` }
-    });
-  }
-});
-
-
-
-/* -------------------------------------------------------------------------- */
-/* API: manual PDF upload fallback                                            */
-/* -------------------------------------------------------------------------- */
-
-app.post(
-  "/api/zotero/pdf-upload",
-  express.raw({ type: ["application/pdf", "application/octet-stream"], limit: "30mb" }),
+app.get(
+  "/api/zotero/library",
   async (req, res) => {
     try {
-      if (!Buffer.isBuffer(req.body) || req.body.length < 5) {
-        return res.status(400).json({
-          error: { message: "No PDF file was received." }
-        });
+      const auth =
+        requireZoteroAuth(
+          req,
+          res
+        );
+
+      if (!auth) {
+        return;
       }
 
-      if (req.body.subarray(0, 5).toString("ascii") !== "%PDF-") {
-        return res.status(400).json({
-          error: { message: "The uploaded file does not appear to be a PDF." }
-        });
-      }
+      const q =
+        cleanText(
+          req.query.q ||
+          "",
+          300
+        ).toLowerCase();
 
-      const parsed = await extractPdfText(req.body, 45000);
-
-      if (!parsed.text || parsed.text.length < 300) {
-        return res.status(422).json({
-          error: {
-            message:
-              "The PDF was received, but little or no selectable text could be extracted. It may be scanned/image-only and would require OCR."
-          }
+      const params =
+        new URLSearchParams({
+          limit: "100",
+          sort:
+            "dateModified",
+          direction:
+            "desc",
+          format: "json"
         });
+
+      const rawItems =
+        await zoteroFetchJson(
+          "/users/" +
+          encodeURIComponent(
+            auth.userId
+          ) +
+          "/items/top?" +
+          params.toString(),
+
+          auth.apiKey
+        );
+
+      const excludedTypes =
+        new Set([
+          "attachment",
+          "note",
+          "annotation"
+        ]);
+
+      let items =
+        arr(rawItems)
+          .map(
+            normalizeZoteroItem
+          )
+          .filter(
+            (item) => {
+              return (
+                item.key &&
+                !excludedTypes.has(
+                  item.itemType
+                )
+              );
+            }
+          );
+
+      if (q) {
+        items =
+          items.filter(
+            (item) => {
+              const haystack =
+                [
+                  item.title,
+                  item.creators,
+                  item.publicationTitle,
+                  item.DOI,
+                  item.tags.join(
+                    " "
+                  )
+                ]
+                  .join(" ")
+                  .toLowerCase();
+
+              return haystack
+                .includes(q);
+            }
+          );
       }
 
       res.json({
-        ok: true,
-        pages: parsed.pages,
-        text: parsed.text,
-        source: "manual-upload"
+        userId:
+          auth.userId,
+
+        username: "",
+
+        count:
+          items.length,
+
+        items:
+          items
       });
     } catch (error) {
-      console.error("Manual PDF parse error:", error);
-      res.status(500).json({
-        error: { message: `Could not read PDF: ${error.message}` }
-      });
+      res
+        .status(500)
+        .json({
+          error: {
+            message:
+              "Could not load Zotero library: " +
+              error.message
+          }
+        });
     }
   }
 );
 
 
-/* -------------------------------------------------------------------------- */
-/* API: Claude chat                                                           */
-/* -------------------------------------------------------------------------- */
+app.get(
+  "/api/zotero/article/:itemKey",
+  async (req, res) => {
+    try {
+      const auth =
+        requireZoteroAuth(
+          req,
+          res
+        );
 
-app.post("/api/chat", async (req, res) => {
-  try {
-    if (!ANTHROPIC_API_KEY) {
-      return res.status(500).json({
-        error: {
-          message: "Missing ANTHROPIC_API_KEY. Add it to your local .env file or Render environment variables."
+      if (!auth) {
+        return;
+      }
+
+      const itemKey =
+        cleanText(
+          req.params
+            .itemKey ||
+          "",
+          40
+        );
+
+      if (
+        !/^[A-Za-z0-9]+$/
+          .test(itemKey)
+      ) {
+        return res
+          .status(400)
+          .json({
+            error: {
+              message:
+                "Invalid Zotero item key."
+            }
+          });
+      }
+
+      const item =
+        await zoteroFetchJson(
+          "/users/" +
+          encodeURIComponent(
+            auth.userId
+          ) +
+          "/items/" +
+          encodeURIComponent(
+            itemKey
+          ),
+
+          auth.apiKey
+        );
+
+      let children = [];
+
+      try {
+        children =
+          await zoteroFetchJson(
+            "/users/" +
+            encodeURIComponent(
+              auth.userId
+            ) +
+            "/items/" +
+            encodeURIComponent(
+              itemKey
+            ) +
+            "/children?limit=100&format=json",
+
+            auth.apiKey
+          );
+      } catch (error) {
+        children = [];
+      }
+
+      const notes =
+        arr(children)
+          .filter(
+            (child) => {
+              return (
+                child?.data
+                  ?.itemType ===
+                "note"
+              );
+            }
+          );
+
+      const attachments =
+        arr(children)
+          .filter(
+            (child) => {
+              return (
+                child?.data
+                  ?.itemType ===
+                "attachment"
+              );
+            }
+          );
+
+      let pdfAttachment =
+        null;
+
+      for (
+        const attachment of
+        attachments
+      ) {
+        const description =
+          (
+            `${
+              attachment
+                ?.data
+                ?.contentType ||
+              ""
+            } ` +
+            `${
+              attachment
+                ?.data
+                ?.filename ||
+              ""
+            } ` +
+            `${
+              attachment
+                ?.data
+                ?.title ||
+              ""
+            }`
+          );
+
+        if (
+          /pdf/i.test(
+            description
+          )
+        ) {
+          pdfAttachment =
+            attachment;
+
+          break;
         }
+      }
+
+      if (
+        !pdfAttachment &&
+        attachments.length
+      ) {
+        pdfAttachment =
+          attachments[0];
+      }
+
+      const pdfResult =
+        await retrieveZoteroPdfText({
+          userId:
+            auth.userId,
+
+          apiKey:
+            auth.apiKey,
+
+          attachment:
+            pdfAttachment
+        });
+
+      const fullText =
+        pdfResult.text ||
+        "";
+
+      const normalized =
+        normalizeZoteroItem(
+          item
+        );
+
+      const context =
+        buildZoteroArticleContext({
+          item: item,
+          notes: notes,
+          attachment:
+            pdfAttachment,
+          fullText:
+            fullText,
+          fullTextSource:
+            pdfResult.source
+        });
+
+      let attachmentForFrontend =
+        null;
+
+      if (pdfAttachment) {
+        const data =
+          pdfAttachment
+            ?.data ||
+          {};
+
+        attachmentForFrontend = {
+          key:
+            pdfAttachment.key,
+
+          title:
+            cleanText(
+              data.title ||
+              data.filename ||
+              "Attachment",
+              500
+            ),
+
+          filename:
+            cleanText(
+              data.filename ||
+              "",
+              500
+            ),
+
+          contentType:
+            cleanText(
+              data.contentType ||
+              "",
+              200
+            )
+        };
+      }
+
+      res.json({
+        article:
+          normalized,
+
+        attachment:
+          attachmentForFrontend,
+
+        fullTextAvailable:
+          Boolean(fullText),
+
+        fullTextSource:
+          pdfResult.source,
+
+        pdfStatusMessage:
+          pdfResult.reason ||
+          "",
+
+        indexedPages:
+          pdfResult
+            .indexedPages ||
+          null,
+
+        totalPages:
+          pdfResult
+            .totalPages ||
+          pdfResult.pages ||
+          null,
+
+        context:
+          context
       });
+    } catch (error) {
+      res
+        .status(500)
+        .json({
+          error: {
+            message:
+              "Could not load Zotero article: " +
+              error.message
+          }
+        });
     }
+  }
+);
 
-    const { system, messages } = req.body || {};
 
-    if (typeof system !== "string" || !system.trim() || !Array.isArray(messages)) {
-      return res.status(400).json({
-        error: { message: "Request must include a system string and messages array." }
+// Manual PDF upload
+
+app.post(
+  "/api/zotero/pdf-upload",
+
+  express.raw({
+    type: [
+      "application/pdf",
+      "application/octet-stream"
+    ],
+
+    limit:
+      "30mb"
+  }),
+
+  async (req, res) => {
+    try {
+      if (
+        !Buffer.isBuffer(
+          req.body
+        ) ||
+        req.body.length < 5
+      ) {
+        return res
+          .status(400)
+          .json({
+            error: {
+              message:
+                "No PDF file was received."
+            }
+          });
+      }
+
+      const pdfHeader =
+        req.body
+          .subarray(0, 5)
+          .toString(
+            "ascii"
+          );
+
+      if (
+        pdfHeader !==
+        "%PDF-"
+      ) {
+        return res
+          .status(400)
+          .json({
+            error: {
+              message:
+                "The uploaded file does not appear to be a PDF."
+            }
+          });
+      }
+
+      const parsed =
+        await extractPdfText(
+          req.body,
+          45000
+        );
+
+      if (
+        !parsed.text ||
+        parsed.text.length <
+          300
+      ) {
+        return res
+          .status(422)
+          .json({
+            error: {
+              message:
+                "The PDF was received, but little or no selectable text could be extracted. It may be scanned/image-only and would require OCR."
+            }
+          });
+      }
+
+      res.json({
+        ok: true,
+
+        pages:
+          parsed.pages,
+
+        text:
+          parsed.text,
+
+        source:
+          "manual-upload"
       });
-    }
+    } catch (error) {
+      console.error(
+        "Manual PDF parse error:",
+        error
+      );
 
-    if (messages.length > 40) {
-      return res.status(400).json({
-        error: { message: "The chat history is too long. Start a new trial chat and try again." }
-      });
+      res
+        .status(500)
+        .json({
+          error: {
+            message:
+              "Could not read PDF: " +
+              error.message
+          }
+        });
     }
+  }
+);
 
-    const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "anthropic-version": "2023-06-01",
-        "x-api-key": ANTHROPIC_API_KEY
-      },
-      body: JSON.stringify({
-        model: ANTHROPIC_MODEL,
-        max_tokens: 2600,
-        // Disabling adaptive thinking keeps this evidence-extraction chatbot
-        // faster and reserves the output budget for the visible answer/table.
-        thinking: { type: "disabled" },
+
+// Claude chat
+
+app.post(
+  "/api/chat",
+  async (req, res) => {
+    try {
+      if (
+        !ANTHROPIC_API_KEY
+      ) {
+        return res
+          .status(500)
+          .json({
+            error: {
+              message:
+                "Missing ANTHROPIC_API_KEY. Add it to your local .env file or Render environment variables."
+            }
+          });
+      }
+
+      const {
         system,
         messages
-      })
-    });
+      } =
+        req.body || {};
 
-    const responseText = await anthropicResponse.text();
+      if (
+        typeof system !==
+          "string" ||
+        !system.trim() ||
+        !Array.isArray(
+          messages
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            error: {
+              message:
+                "Request must include a system string and messages array."
+            }
+          });
+      }
 
-    res
-      .status(anthropicResponse.status)
-      .type("application/json")
-      .send(responseText);
-  } catch (error) {
-    res.status(500).json({
-      error: { message: `Server could not reach Anthropic: ${error.message}` }
+      if (
+        messages.length >
+        40
+      ) {
+        return res
+          .status(400)
+          .json({
+            error: {
+              message:
+                "The chat history is too long. Start a new trial chat and try again."
+            }
+          });
+      }
+
+      const anthropicResponse =
+        await fetch(
+          "https://api.anthropic.com/v1/messages",
+          {
+            method:
+              "POST",
+
+            headers: {
+              "content-type":
+                "application/json",
+
+              "anthropic-version":
+                "2023-06-01",
+
+              "x-api-key":
+                ANTHROPIC_API_KEY
+            },
+
+            body:
+              JSON.stringify({
+                model:
+                  ANTHROPIC_MODEL,
+
+                max_tokens:
+                  2600,
+
+                thinking: {
+                  type:
+                    "disabled"
+                },
+
+                system:
+                  system,
+
+                messages:
+                  messages
+              })
+          }
+        );
+
+      const responseText =
+        await anthropicResponse
+          .text();
+
+      res
+        .status(
+          anthropicResponse
+            .status
+        )
+        .type(
+          "application/json"
+        )
+        .send(
+          responseText
+        );
+    } catch (error) {
+      res
+        .status(500)
+        .json({
+          error: {
+            message:
+              "Server could not reach Anthropic: " +
+              error.message
+          }
+        });
+    }
+  }
+);
+
+
+// Render health check
+
+app.get(
+  "/api/health",
+  (req, res) => {
+    res.json({
+      ok: true,
+
+      model:
+        ANTHROPIC_MODEL,
+
+      zoteroOAuthConfigured:
+        Boolean(
+          ZOTERO_CLIENT_KEY &&
+          ZOTERO_CLIENT_SECRET &&
+          SESSION_SECRET
+        )
     });
   }
-});
+);
 
-// Small route that helps you confirm the backend is alive.
-app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: true,
-    model: ANTHROPIC_MODEL,
-    zoteroOAuthConfigured: Boolean(ZOTERO_CLIENT_KEY && ZOTERO_CLIENT_SECRET && SESSION_SECRET)
-  });
-});
 
-app.listen(PORT, () => {
-  console.log(`Clinical Trial Evidence Assistant running at http://localhost:${PORT}`);
-});
+// Start server
+
+app.listen(
+  PORT,
+  () => {
+    console.log(
+      `Clinical Trial Evidence Assistant running at http://localhost:${PORT}`
+    );
+  }
+);
